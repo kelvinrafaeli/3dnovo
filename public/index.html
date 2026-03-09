@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3dnovo | Gerador de Plantas 2D e 3D</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="background-grid"></div>
+    <main class="layout">
+      <section class="hero-card">
+        <p class="eyebrow">Planejamento Arquitetonico Assistido</p>
+        <h1>Formulario inteligente para gerar planta 2D e roteiro 3D completo</h1>
+        <p>
+          Preencha os dados do terreno e do cliente. O sistema gera automaticamente os prompts tecnicos
+          para planta 2D detalhada, render no Nano Banana 2 e etapas de modelagem 3D total, por comodo e fachada.
+        </p>
+      </section>
+
+      <section class="form-card">
+        <form id="terrain-form">
+          <h2>Identificacao do Terreno e Perfil do Usuario</h2>
+
+          <div class="grid two-cols">
+            <label>
+              Nome Completo
+              <input name="fullName" required />
+            </label>
+            <label>
+              CPF/CNPJ
+              <input name="document" required />
+            </label>
+          </div>
+
+          <div class="grid two-cols">
+            <label>
+              Orcamento Estimado para a Obra
+              <select name="budgetRange" required>
+                <option value="">Selecione uma faixa</option>
+                <option>ate R$ 150 mil</option>
+                <option>R$ 150 mil a R$ 300 mil</option>
+                <option>R$ 300 mil a R$ 600 mil</option>
+                <option>R$ 600 mil a R$ 1,2 milhao</option>
+                <option>acima de R$ 1,2 milhao</option>
+              </select>
+            </label>
+            <label>
+              Objetivo Principal do Imovel
+              <select name="objective" required>
+                <option value="">Selecione o objetivo</option>
+                <option>Residencial familiar</option>
+                <option>Residencial para aluguel</option>
+                <option>Comercial</option>
+                <option>Misto (residencial + comercial)</option>
+                <option>Investimento e valorizacao</option>
+              </select>
+            </label>
+          </div>
+
+          <h2>Localizacao do Terreno</h2>
+          <div class="grid three-cols">
+            <label>
+              CEP
+              <input name="cep" required />
+            </label>
+            <label>
+              Rua
+              <input name="street" required />
+            </label>
+            <label>
+              Numero
+              <input name="number" required />
+            </label>
+          </div>
+
+          <div class="grid three-cols">
+            <label>
+              Bairro
+              <input name="neighborhood" required />
+            </label>
+            <label>
+              Cidade
+              <input name="city" required />
+            </label>
+            <label>
+              Estado
+              <input name="state" required />
+            </label>
+          </div>
+
+          <label>
+            Tipo de Terreno
+            <select name="terrainType" required>
+              <option value="">Selecione</option>
+              <option>Urbano regular</option>
+              <option>Urbano irregular</option>
+              <option>Condominio</option>
+              <option>Rural</option>
+              <option>Esquina</option>
+            </select>
+          </label>
+
+          <h2>Caracteristicas Tecnicas do Terreno</h2>
+          <div class="grid four-cols">
+            <label>
+              Dimensoes: Frente (m)
+              <input name="frontMeters" type="number" step="0.01" required />
+            </label>
+            <label>
+              Dimensoes: Fundos (m)
+              <input name="backMeters" type="number" step="0.01" required />
+            </label>
+            <label>
+              Dimensoes: Lateral Direita (m)
+              <input name="rightMeters" type="number" step="0.01" required />
+            </label>
+            <label>
+              Dimensoes: Lateral Esquerda (m)
+              <input name="leftMeters" type="number" step="0.01" required />
+            </label>
+          </div>
+
+          <div class="grid two-cols">
+            <label>
+              Altimetria e Topografia
+              <select name="topography" required>
+                <option value="">Selecione</option>
+                <option>Plano</option>
+                <option>Aclive</option>
+                <option>Declive</option>
+                <option>Misto com desniveis</option>
+              </select>
+            </label>
+            <label>
+              Tipo de Solo (via sondagem)
+              <select name="soilType" required>
+                <option value="">Selecione</option>
+                <option>Argiloso</option>
+                <option>Arenoso</option>
+                <option>Silto-argiloso</option>
+                <option>Rochoso</option>
+                <option>Misto</option>
+              </select>
+            </label>
+          </div>
+
+          <h2>Analise da Vizinhanca</h2>
+          <div class="grid three-cols">
+            <label>
+              Vizinho da Esquerda
+              <select name="leftNeighbor" required>
+                <option value="">Selecione</option>
+                <option>Residencial baixo</option>
+                <option>Residencial alto</option>
+                <option>Comercial</option>
+                <option>Area livre</option>
+                <option>Muro cego</option>
+              </select>
+            </label>
+            <label>
+              Vizinho da Direita
+              <select name="rightNeighbor" required>
+                <option value="">Selecione</option>
+                <option>Residencial baixo</option>
+                <option>Residencial alto</option>
+                <option>Comercial</option>
+                <option>Area livre</option>
+                <option>Muro cego</option>
+              </select>
+            </label>
+            <label>
+              Vizinho dos Fundos
+              <select name="backNeighbor" required>
+                <option value="">Selecione</option>
+                <option>Residencial baixo</option>
+                <option>Residencial alto</option>
+                <option>Comercial</option>
+                <option>Area livre</option>
+                <option>Muro cego</option>
+              </select>
+            </label>
+          </div>
+
+          <h2>Infraestrutura no Lote</h2>
+          <div class="checkbox-row">
+            <label class="inline-check">
+              <input name="hasWater" type="checkbox" />
+              Ponto de Agua
+            </label>
+            <label class="inline-check">
+              <input name="hasSewer" type="checkbox" />
+              Ponto de Esgoto
+            </label>
+            <label class="inline-check">
+              <input name="hasElectricity" type="checkbox" />
+              Ponto de Eletricidade
+            </label>
+          </div>
+
+          <button type="submit">Gerar pacote 2D + 3D</button>
+          <p id="status" class="status"></p>
+        </form>
+      </section>
+
+      <section class="results-card" id="results-card" hidden>
+        <div class="results-header">
+          <h2>Resultado Gerado</h2>
+          <div class="results-actions">
+            <button id="render-2d-btn" type="button">Renderizar Planta 2D</button>
+            <button id="render-3d-btn" type="button">Gerar Pacote 3D Completo</button>
+          </div>
+        </div>
+
+        <div class="result-block">
+          <h3>Resumo</h3>
+          <pre id="summary-output"></pre>
+        </div>
+
+        <div class="result-block">
+          <h3>Prompt da Planta 2D</h3>
+          <textarea id="prompt-2d" rows="10" readonly></textarea>
+        </div>
+
+        <div class="result-block">
+          <h3>Prompt 3D Total</h3>
+          <textarea id="prompt-3d-total" rows="8" readonly></textarea>
+        </div>
+
+        <div class="result-block">
+          <h3>Prompt Fachada 3D</h3>
+          <textarea id="prompt-facade" rows="8" readonly></textarea>
+        </div>
+
+        <div class="result-block">
+          <h3>Prompts 3D por Comodo</h3>
+          <pre id="rooms-output"></pre>
+        </div>
+
+        <div class="result-block" id="render-output" hidden>
+          <h3>Retorno da Renderizacao 2D</h3>
+          <img id="render-image" alt="Renderizacao da planta 2D" hidden />
+          <pre id="render-text"></pre>
+        </div>
+
+        <div class="result-block" id="extract-output-block" hidden>
+          <h3>Dados Extraidos da Planta 2D (Base Oficial do 3D)</h3>
+          <pre id="extract-output"></pre>
+        </div>
+
+        <div class="result-block" id="render-3d-output" hidden>
+          <h3>Retorno da Renderizacao 3D</h3>
+
+          <div class="render-grid">
+            <article class="render-card">
+              <h4>3D Total</h4>
+              <img id="render-3d-total-image" alt="Renderizacao 3D total" hidden />
+              <pre id="render-3d-total-text"></pre>
+            </article>
+
+            <article class="render-card">
+              <h4>Fachada 3D</h4>
+              <img id="render-3d-facade-image" alt="Renderizacao 3D da fachada" hidden />
+              <pre id="render-3d-facade-text"></pre>
+            </article>
+          </div>
+
+          <div class="result-block">
+            <h4>3D por Comodo</h4>
+            <div id="render-3d-rooms-list" class="render-rooms-list"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
