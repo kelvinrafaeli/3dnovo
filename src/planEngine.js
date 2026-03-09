@@ -131,7 +131,7 @@ function createGenerationPackage(inputData) {
 
   const prompt2DTechnical = [
     "Voce e um arquiteto especializado em plantas tecnicas brasileiras.",
-    "Com base no contexto abaixo, gere uma planta 2D humanizada e uma planta 2D tecnica extremamente detalhada.",
+    "Com base no contexto abaixo, gere uma planta 2D humanizada extremamente detalhada.",
     "Inclua cotas, circulacao, espessura de paredes, nome de comodos, portas, janelas, recuos e orientacao norte.",
     "Responda em JSON com as chaves: conceito, programa_ambientes, diretrizes_tecnicas, observacoes_normativas.",
     "",
@@ -139,9 +139,14 @@ function createGenerationPackage(inputData) {
   ].join("\n");
 
   const prompt2DRender = [
-    "Renderize uma planta baixa 2D detalhada no estilo blueprint arquitetonico.",
-    "Mostre paredes, portas, janelas, cotas e nomes dos comodos em portugues.",
-    "Foco em legibilidade tecnica, proporcao realista e alta nitidez.",
+    "Renderize uma planta baixa 2D HUMANIZADA (humanized floor plan) com visual arquitetonico de apresentacao.",
+    "Estilo: planta humanizada com cores suaves, texturas de piso por ambiente, mobiliario representativo (camas, sofas, mesas, pias, vasos sanitarios) e vegetacao decorativa.",
+    "Use paleta de cores quentes e acolhedoras: tons de bege, madeira, cinza claro e verde suave para jardim.",
+    "Paredes com espessura visivel em tom escuro. Portas e janelas representadas de forma realista.",
+    "Inclua nomes dos comodos em portugues com fonte elegante e legivel.",
+    "Mantenha proporcao realista, escala coerente e alta nitidez.",
+    "NAO usar estilo blueprint/tecnico. NAO usar fundo azul escuro. NAO mostrar cotas com linhas de chamada.",
+    "Mostrar sombras suaves e iluminacao natural para dar profundidade.",
     "Inclua obrigatoriamente TODOS os ambientes listados abaixo:",
     mandatoryRoomsText,
     "",
