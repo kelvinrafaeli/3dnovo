@@ -26,10 +26,16 @@ const terrainFormSchema = z.object({
   hasElectricity: z.coerce.boolean()
 });
 
-function estimateArea(data) {
-  const averageWidth = (data.frontMeters + data.backMeters) / 2;
-  const averageDepth = (data.rightMeters + data.leftMeters) / 2;
-  return Number((averageWidth * averageDepth).toFixed(2));
+function calculateLotMetrics(data) {
+  const widthMeters = Number((((data.frontMeters + data.backMeters) / 2)).toFixed(2));
+  const depthMeters = Number((((data.rightMeters + data.leftMeters) / 2)).toFixed(2));
+  const areaM2 = Number((widthMeters * depthMeters).toFixed(2));
+
+  return {
+    widthMeters,
+    depthMeters,
+    areaM2
+  };
 }
 
 function suggestRoomsByObjective(objective) {
@@ -88,7 +94,7 @@ function uniqueRooms(roomList) {
   return normalized;
 }
 
-function buildContextText(data, areaEstimate) {
+function buildContextText(data, lotMetrics) {
   return [
     "DADOS DO CLIENTE:",
     `- Nome: ${data.fullName}`,
@@ -106,7 +112,10 @@ function buildContextText(data, areaEstimate) {
     `- Fundos: ${data.backMeters} m`,
     `- Lateral direita: ${data.rightMeters} m`,
     `- Lateral esquerda: ${data.leftMeters} m`,
-    `- Area estimada do lote: ${areaEstimate} m2`,
+    `- Largura de referencia do lote (media frente/fundos): ${lotMetrics.widthMeters} m`,
+    `- Profundidade de referencia do lote (media laterais): ${lotMetrics.depthMeters} m`,
+    `- Area calculada obrigatoria do lote (largura x profundidade): ${lotMetrics.widthMeters} x ${lotMetrics.depthMeters} = ${lotMetrics.areaM2} m2`,
+    "- REGRA OBRIGATORIA: nao inventar area (ex.: 300 m2). Sempre usar a area calculada acima.",
     `- Topografia: ${data.topography}`,
     `- Tipo de solo: ${data.soilType}`,
     "",
@@ -124,10 +133,10 @@ function buildContextText(data, areaEstimate) {
 
 function createGenerationPackage(inputData) {
   const data = terrainFormSchema.parse(inputData);
-  const estimatedArea = estimateArea(data);
+  const lotMetrics = calculateLotMetrics(data);
   const suggestedRooms = uniqueRooms(suggestRoomsByObjective(data.objective));
   const mandatoryRoomsText = suggestedRooms.map((room) => `- ${room}`).join("\n");
-  const contextText = buildContextText(data, estimatedArea);
+  const contextText = buildContextText(data, lotMetrics);
 
   const prompt2DTechnical = [
     "Voce e um arquiteto especializado em plantas tecnicas brasileiras.",
@@ -197,7 +206,7 @@ function createGenerationPackage(inputData) {
       objective: data.objective,
       budgetRange: data.budgetRange,
       location: `${data.city}/${data.state}`,
-      estimatedAreaM2: estimatedArea
+      estimatedAreaM2: lotMetrics.areaM2
     },
     roomProgram: suggestedRooms,
     formData: data,

@@ -329,6 +329,38 @@ function buildAdjacentRoomsBlock(roomData, allRooms) {
     .join("\n");
 }
 
+function buildIntegratedRoomConsistencyBlock(roomData, allRooms) {
+  if (!roomData) {
+    return [
+      "REGRA DE CONTINUIDADE PARA AMBIENTE INTEGRADO (OBRIGATORIA):",
+      "- Se houver ambiente adjacente visivel, manter geometria, aberturas e materiais coerentes com os outros renders.",
+      "- O ambiente que nao e foco pode aparecer apenas como fundo desfocado e com baixa nitidez.",
+      "- Evitar detalhar ou inventar mobiliario/decoracao no ambiente nao foco.",
+      "- Se houver conflito visual, priorizar enquadramento que esconda parcialmente o ambiente nao foco."
+    ].join("\n");
+  }
+
+  const adjacentNames = findRoomsByCandidateNames(
+    allRooms,
+    Array.isArray(roomData.adjacent_to) ? roomData.adjacent_to : []
+  )
+    .map((room) => String(room?.name || "").trim())
+    .filter(Boolean)
+    .slice(0, 4);
+
+  const adjacentList = adjacentNames.length
+    ? adjacentNames.join(", ")
+    : "ambientes adjacentes";
+
+  return [
+    "REGRA DE CONTINUIDADE PARA AMBIENTE INTEGRADO (OBRIGATORIA):",
+    `- Para conexoes abertas com ${adjacentList}, manter a MESMA geometria, a MESMA posicao de aberturas e os MESMOS materiais base em todos os renders.`,
+    "- O ambiente que nao e foco deve ficar em segundo plano: desfocado, com baixa nitidez e sem detalhes finos.",
+    "- Nao inventar layout novo no ambiente nao foco; se ele aparecer, manter apenas volume neutro coerente.",
+    "- Se houver divergencia entre mostrar ou ocultar o fundo, priorizar ocultar/reduzir o fundo do ambiente nao foco."
+  ].join("\n");
+}
+
 function buildRenderKindRules(renderKind) {
   if (renderKind === "total-exterior") {
     return [
@@ -352,7 +384,8 @@ function buildRenderKindRules(renderKind) {
       "Renderizar APENAS ambiente interno do comodo alvo, com camera interna e escala humana.",
       "Nao gerar vista externa da casa, nao mostrar fachada e nao mostrar planta baixa.",
       "Respeitar rigorosamente dimensoes e aberturas do comodo alvo extraidas da planta 2D.",
-      "Se houver imagens internas de referencia anexadas, manter exatamente a mesma posicao de portas, janelas e conexao com ambientes adjacentes."
+      "Se houver imagens internas de referencia anexadas, manter exatamente a mesma posicao de portas, janelas e conexao com ambientes adjacentes.",
+      "Quando houver conceito aberto com outro ambiente, o ambiente nao foco deve aparecer desfocado/neutralizado para evitar divergencia entre renders."
     ];
   }
 
@@ -360,6 +393,38 @@ function buildRenderKindRules(renderKind) {
     "TIPO DE RENDER: GENERICO CONTROLADO.",
     "Manter fidelidade total aos dados extraidos da planta 2D e ao lock de consistencia."
   ];
+}
+
+function buildGenerationConfigByRenderKind(renderKind) {
+  if (renderKind === "room-interior") {
+    return {
+      temperature: 0.05,
+      topP: 0.35,
+      maxOutputTokens: 4096
+    };
+  }
+
+  if (renderKind === "facade-exterior") {
+    return {
+      temperature: 0.1,
+      topP: 0.5,
+      maxOutputTokens: 4096
+    };
+  }
+
+  if (renderKind === "total-exterior") {
+    return {
+      temperature: 0.12,
+      topP: 0.6,
+      maxOutputTokens: 4096
+    };
+  }
+
+  return {
+    temperature: 0.15,
+    topP: 0.8,
+    maxOutputTokens: 4096
+  };
 }
 
 function build3DPromptFromExtraction({
@@ -382,6 +447,10 @@ function build3DPromptFromExtraction({
   const roomData = findTargetRoomFromExtraction(extractedPlanData?.rooms, label);
   const roomMetricsBlock = buildRoomMetricsBlock(roomData);
   const adjacentRoomsBlock = buildAdjacentRoomsBlock(roomData, extractedPlanData?.rooms);
+  const integratedRoomConsistencyBlock = buildIntegratedRoomConsistencyBlock(
+    roomData,
+    extractedPlanData?.rooms
+  );
   const renderKindRules = buildRenderKindRules(renderKind);
   const includeRoomMetrics = renderKind === "room-interior";
 
@@ -406,6 +475,8 @@ function build3DPromptFromExtraction({
       ? "DADOS DOS AMBIENTES ADJACENTES (PARA FUNDO/TRANSICAO COERENTE):"
       : "",
     includeRoomMetrics ? adjacentRoomsBlock : "",
+    includeRoomMetrics ? "" : "",
+    includeRoomMetrics ? integratedRoomConsistencyBlock : "",
     "",
     "Restricoes extras extraidas da planta 2D:",
     extractedStrictConstraints,
@@ -519,6 +590,7 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
     {
       referenceImageDataUrl: referencePlanImageDataUrl || undefined,
       referenceImageDataUrls: additionalReferenceImageDataUrls,
+      generationConfig: buildGenerationConfigByRenderKind("total-exterior"),
       referenceInstruction: [
         "A imagem anexada e a planta 2D oficial do projeto.",
         "Use essa planta apenas como apoio visual para os dados estruturados extraidos.",
@@ -540,6 +612,7 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
     {
       referenceImageDataUrl: referencePlanImageDataUrl || undefined,
       referenceImageDataUrls: additionalReferenceImageDataUrls,
+      generationConfig: buildGenerationConfigByRenderKind("facade-exterior"),
       referenceInstruction: [
         "A imagem anexada e a planta 2D oficial do projeto.",
         "Use essa planta apenas como apoio visual para os dados estruturados extraidos.",
@@ -574,6 +647,7 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
       {
         referenceImageDataUrl: referencePlanImageDataUrl || undefined,
         referenceImageDataUrls: additionalReferenceImageDataUrls,
+        generationConfig: buildGenerationConfigByRenderKind("room-interior"),
         referenceInstruction: [
           "A imagem anexada e a planta 2D oficial do projeto.",
           "Use essa planta apenas como apoio visual para os dados estruturados extraidos.",
@@ -644,6 +718,7 @@ app.post("/api/plan/render-3d-item", async (req, res) => {
   const renderResult = await renderPromptWithFallback(enhancedPrompt, label, {
     referenceImageDataUrl: referencePlanImageDataUrl || undefined,
     referenceImageDataUrls: additionalReferenceImageDataUrls,
+    generationConfig: buildGenerationConfigByRenderKind(renderKind),
     referenceInstruction: [
       "A imagem anexada e a planta 2D oficial do projeto.",
       "Use essa planta apenas como apoio visual para os dados estruturados extraidos.",

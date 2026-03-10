@@ -164,6 +164,7 @@ async function callGenerateContent(model, apiKey, promptText, options = {}) {
 
   const parts = [];
   const parsedReferenceImages = collectReferenceImages(options);
+  const expectImage = options.expectImage === true;
 
   for (const parsedReferenceImage of parsedReferenceImages) {
     parts.push({
@@ -178,7 +179,27 @@ async function callGenerateContent(model, apiKey, promptText, options = {}) {
     parts.push({ text: options.referenceInstruction.trim() });
   }
 
-  parts.push({ text: promptText });
+  if (expectImage) {
+    const imageResolution = process.env.IMAGE_OUTPUT_RESOLUTION || "1024x1024";
+    parts.push({
+      text: `[OUTPUT IMAGE REQUIREMENTS: Generate the image at ${imageResolution} resolution, highest quality, ultra detailed.]\n\n${promptText}`
+    });
+  } else {
+    parts.push({ text: promptText });
+  }
+
+  const baseGenerationConfig = expectImage
+    ? {
+        responseModalities: ["TEXT", "IMAGE"],
+        temperature: 0.4,
+        topP: 0.9,
+        maxOutputTokens: 8192
+      }
+    : {
+        temperature: 0.2,
+        topP: 0.9,
+        maxOutputTokens: 4096
+      };
 
   const payload = {
     contents: [
@@ -188,9 +209,7 @@ async function callGenerateContent(model, apiKey, promptText, options = {}) {
       }
     ],
     generationConfig: {
-      temperature: 0.4,
-      topP: 0.9,
-      maxOutputTokens: 4096,
+      ...baseGenerationConfig,
       ...(options.generationConfig || {})
     }
   };
@@ -227,16 +246,21 @@ async function renderWithNanoBanana2(promptText, options = {}) {
   const usedReferenceImage = referenceImageCount > 0;
 
   try {
-    data = await callGenerateContent(model, apiKey, promptText, options);
+    data = await callGenerateContent(model, apiKey, promptText, {
+      ...options,
+      expectImage: true
+    });
   } catch (error) {
-    const shouldRetryWithFallback =
-      model !== fallbackModel && [400, 404, 429].includes(error.status);
+    const shouldRetryWithFallback = model !== fallbackModel && [404, 429, 500, 503].includes(error.status);
 
     if (!shouldRetryWithFallback) {
       throw error;
     }
 
-    data = await callGenerateContent(fallbackModel, apiKey, promptText, options);
+    data = await callGenerateContent(fallbackModel, apiKey, promptText, {
+      ...options,
+      expectImage: true
+    });
     usedModel = fallbackModel;
     usedFallback = true;
   }
@@ -263,6 +287,9 @@ function buildPlanExtractionPrompt(roomProgram, plan2DPrompt, mode = "full") {
       "Analise a imagem da planta 2D anexada.",
       "Retorne SOMENTE JSON valido, sem markdown.",
       "Se algum dado nao estiver legivel, use null.",
+      "Calcule total_area_m2 obrigatoriamente por largura x profundidade do lote.",
+      "Quando houver 4 lados, use: largura = media(front_m, back_m) e profundidade = media(right_m, left_m).",
+      "Nao invente area do lote (ex.: 300 m2) sem base nas medidas extraidas.",
       "Schema obrigatorio:",
       "{",
       '  "confidence": { "score_0_100": number|null, "notes": string|null },',
@@ -284,6 +311,9 @@ function buildPlanExtractionPrompt(roomProgram, plan2DPrompt, mode = "full") {
   return [
     "Analise a imagem da planta 2D anexada e extraia todos os dados tecnicos possiveis com maxima fidelidade.",
     "Nao invente informacao nao visivel; quando nao for legivel, preencha null e descreva em observacoes.",
+    "Calcule total_area_m2 obrigatoriamente por largura x profundidade do lote.",
+    "Quando houver 4 lados, use: largura = media(front_m, back_m) e profundidade = media(right_m, left_m).",
+    "Nao invente area do lote (ex.: 300 m2) sem base nas medidas extraidas.",
     "Retorne SOMENTE JSON valido, sem markdown.",
     "Schema JSON obrigatorio:",
     "{",
@@ -327,6 +357,7 @@ async function attemptExtractJsonWithModel({
   referenceImageDataUrl
 }) {
   const extractionData = await callGenerateContent(modelName, apiKey, prompt, {
+    expectImage: false,
     referenceImageDataUrl,
     referenceInstruction:
       "A imagem anexada e a planta 2D oficial. Extraia medidas, cotas, comodos, portas e janelas com fidelidade tecnica.",
@@ -352,6 +383,7 @@ async function attemptExtractJsonWithModel({
     ].join("\n");
 
     const repairData = await callGenerateContent(modelName, apiKey, repairPrompt, {
+      expectImage: false,
       generationConfig: {
         temperature: 0,
         responseMimeType: "application/json"
@@ -419,6 +451,34 @@ function normalizeRooms(rawRooms, roomProgram) {
   }));
 }
 
+function toNullableNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function calculateLotAreaFromDimensions(lot, fallbackArea) {
+  const front = toNullableNumber(lot?.front_m);
+  const back = toNullableNumber(lot?.back_m);
+  const right = toNullableNumber(lot?.right_m);
+  const left = toNullableNumber(lot?.left_m);
+
+  const directWidth = front ?? back;
+  const directDepth = right ?? left;
+
+  if (directWidth !== null && directDepth !== null) {
+    return Number((directWidth * directDepth).toFixed(2));
+  }
+
+  const avgWidth = front !== null && back !== null ? (front + back) / 2 : null;
+  const avgDepth = right !== null && left !== null ? (right + left) / 2 : null;
+
+  if (avgWidth !== null && avgDepth !== null) {
+    return Number((avgWidth * avgDepth).toFixed(2));
+  }
+
+  return toNullableNumber(fallbackArea);
+}
+
 function normalizeExtractedPlanData(rawData, roomProgram) {
   const data = rawData && typeof rawData === "object" ? rawData : {};
 
@@ -427,8 +487,24 @@ function normalizeExtractedPlanData(rawData, roomProgram) {
     : [
         "Ser fiel e rigorosamente igual a planta 2D.",
         "Nao inventar portas e janelas.",
-        "Nao alterar geometria principal sem evidencias na planta."
+        "Nao alterar geometria principal sem evidencias na planta.",
+        "Calcular a area total do lote por largura x profundidade, sem inventar m2."
       ];
+
+  const normalizedLot =
+    data.lot && typeof data.lot === "object"
+      ? {
+          front_m: data.lot.front_m ?? null,
+          back_m: data.lot.back_m ?? null,
+          left_m: data.lot.left_m ?? null,
+          right_m: data.lot.right_m ?? null
+        }
+      : { front_m: null, back_m: null, left_m: null, right_m: null };
+
+  const normalizedTotalArea = calculateLotAreaFromDimensions(
+    normalizedLot,
+    data?.overall?.total_area_m2 ?? null
+  );
 
   const normalized = {
     confidence:
@@ -445,20 +521,10 @@ function normalizeExtractedPlanData(rawData, roomProgram) {
         ? {
             style: data.overall.style ?? null,
             north_orientation: data.overall.north_orientation ?? null,
-            total_area_m2: Number.isFinite(Number(data.overall.total_area_m2))
-              ? Number(data.overall.total_area_m2)
-              : null
+            total_area_m2: normalizedTotalArea
           }
-        : { style: null, north_orientation: null, total_area_m2: null },
-    lot:
-      data.lot && typeof data.lot === "object"
-        ? {
-            front_m: data.lot.front_m ?? null,
-            back_m: data.lot.back_m ?? null,
-            left_m: data.lot.left_m ?? null,
-            right_m: data.lot.right_m ?? null
-          }
-        : { front_m: null, back_m: null, left_m: null, right_m: null },
+        : { style: null, north_orientation: null, total_area_m2: normalizedTotalArea },
+    lot: normalizedLot,
     rooms: normalizeRooms(data.rooms || data.comodos, roomProgram),
     openings_global:
       data.openings_global && typeof data.openings_global === "object"
