@@ -10,7 +10,61 @@ const { createLocal3DFallback } = require("./local3dFallback");
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
-const jsonBodyLimit = process.env.JSON_BODY_LIMIT || "25mb";
+
+function parseSizeToBytes(rawSize) {
+  const match = String(rawSize || "")
+    .trim()
+    .toLowerCase()
+    .match(/^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb)?$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const numeric = Number(match[1]);
+
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return null;
+  }
+
+  const unit = (match[2] || "b").toLowerCase();
+  const factorByUnit = {
+    b: 1,
+    kb: 1024,
+    mb: 1024 * 1024,
+    gb: 1024 * 1024 * 1024
+  };
+
+  const factor = factorByUnit[unit];
+  if (!factor) {
+    return null;
+  }
+
+  return Math.floor(numeric * factor);
+}
+
+function resolveJsonBodyLimit(rawLimit) {
+  const minimumBytes = 40 * 1024 * 1024;
+  const defaultLimit = "60mb";
+
+  if (!rawLimit) {
+    return defaultLimit;
+  }
+
+  const parsed = parseSizeToBytes(rawLimit);
+
+  if (!parsed) {
+    return defaultLimit;
+  }
+
+  if (parsed < minimumBytes) {
+    return "40mb";
+  }
+
+  return String(rawLimit);
+}
+
+const jsonBodyLimit = resolveJsonBodyLimit(process.env.JSON_BODY_LIMIT);
 
 const strict3DRules = [
   "SER FIEL E RIGOROSAMENTE IGUAL a planta 2D anexada.",
@@ -19,6 +73,8 @@ const strict3DRules = [
   "Nao inventar quartos/comodos que nao existam na planta 2D.",
   "Nao inventar portas e janelas em locais nao definidos na planta 2D.",
   "Manter posicao, quantidade e proporcao de portas e janelas exatamente como na planta 2D.",
+  "Usar somente objetos, cores e materiais presentes no JSON extraido da imagem 2D.",
+  "Imagem final limpa: sem textos, sem quadro lateral, sem tabela, sem carimbo, sem legenda, sem watermark e sem bloco de metadados.",
   "A imagem final deve mostrar somente visualizacao 3D. Nao exibir planta baixa 2D, cotas, blueprint ou sobreposicoes tecnicas.",
   "Manter tipologia de cobertura, volumetria externa e logica da area externa iguais ao projeto base ja definido."
 ];
@@ -167,7 +223,7 @@ function parseImageList(value) {
   return value
     .map((item) => String(item || "").trim())
     .filter(Boolean)
-    .slice(0, 8);
+    .slice(0, 3);
 }
 
 function parseRenderKind(rawKind, label) {
@@ -201,6 +257,219 @@ function normalizeTextKey(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function dedupeTextList(values) {
+  const output = [];
+  const seen = new Set();
+
+  for (const value of Array.isArray(values) ? values : []) {
+    const normalized = String(value || "").trim();
+    const key = normalizeTextKey(normalized);
+
+    if (!key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    output.push(normalized);
+  }
+
+  return output;
+}
+
+function extractRoomNamesFromData(extractedPlanData) {
+  const rooms = Array.isArray(extractedPlanData?.rooms) ? extractedPlanData.rooms : [];
+  const roomsDetected = Array.isArray(extractedPlanData?.rooms_detected)
+    ? extractedPlanData.rooms_detected
+    : [];
+  const objectRooms = Array.isArray(extractedPlanData?.objects)
+    ? extractedPlanData.objects
+        .map((item) => String(item?.room_name || "").trim())
+        .filter(Boolean)
+    : [];
+
+  return dedupeTextList([
+    ...rooms.map((room) => String(room?.name || "").trim()),
+    ...roomsDetected,
+    ...objectRooms
+  ]);
+}
+
+function findBestRoomNameMatch(rawValue, roomNames) {
+  const candidates = dedupeTextList(roomNames);
+  const source = String(rawValue || "").trim();
+
+  if (!source || candidates.length === 0) {
+    return null;
+  }
+
+  const sourceKey = normalizeTextKey(source);
+  let bestRoom = null;
+  let bestScore = 0;
+
+  for (const roomName of candidates) {
+    const roomKey = normalizeTextKey(roomName);
+
+    if (!roomKey) {
+      continue;
+    }
+
+    let score = 0;
+
+    if (sourceKey === roomKey) {
+      score = 100;
+    } else if (sourceKey.includes(roomKey) || roomKey.includes(sourceKey)) {
+      score = 80;
+    } else {
+      const sourceTokens = sourceKey.split(" ").filter(Boolean);
+      const matchedTokens = sourceTokens.filter((token) => roomKey.includes(token)).length;
+      score = matchedTokens * 10;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestRoom = roomName;
+    }
+  }
+
+  return bestScore >= 20 ? bestRoom : null;
+}
+
+function normalizeVisualObjectsForPrompt(extractedPlanData) {
+  const objects = Array.isArray(extractedPlanData?.objects) ? extractedPlanData.objects : [];
+
+  return objects
+    .map((item) => ({
+      name: String(item?.name || "").trim(),
+      color: String(item?.color || "").trim() || null,
+      material: String(item?.material || "").trim() || null,
+      position_in_room: String(item?.position_in_room || "").trim() || null,
+      room_name: String(item?.room_name || "").trim() || null
+    }))
+    .filter((item) => item.name);
+}
+
+function buildVisualSummaryBlock(extractedPlanData) {
+  const roomStyle = String(
+    extractedPlanData?.room_style || extractedPlanData?.overall?.style || ""
+  ).trim() || "null";
+  const colorPalette = Array.isArray(extractedPlanData?.overall_color_palette)
+    ? extractedPlanData.overall_color_palette.map((item) => String(item || "").trim()).filter(Boolean)
+    : typeof extractedPlanData?.overall_color_palette === "string"
+      ? extractedPlanData.overall_color_palette
+          .split(/[\n,;|]/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : [];
+  const roomNames = extractRoomNamesFromData(extractedPlanData);
+
+  return [
+    `- room_style: ${roomStyle}`,
+    `- overall_color_palette: ${colorPalette.length ? colorPalette.join(", ") : "[]"}`,
+    `- rooms_detected: ${roomNames.length ? roomNames.join(", ") : "[]"}`
+  ].join("\n");
+}
+
+function buildVisualObjectsBlock(extractedPlanData, label, renderKind) {
+  const objects = normalizeVisualObjectsForPrompt(extractedPlanData);
+
+  if (objects.length === 0) {
+    return "Nenhum objeto visual foi extraido; manter cena minima e neutra, sem inventar decoracao.";
+  }
+
+  const extractedRooms = extractRoomNamesFromData(extractedPlanData);
+  const roomData = findTargetRoomFromExtraction(extractedPlanData?.rooms, label);
+  const cleanedLabel = String(label || "")
+    .replace(/^comodo\s+/i, "")
+    .trim();
+  const targetRoom =
+    roomData?.name || findBestRoomNameMatch(cleanedLabel, extractedRooms) || cleanedLabel || null;
+  const targetRoomKey = normalizeTextKey(targetRoom);
+
+  const filteredObjects = objects.filter((item) => {
+    if (renderKind !== "room-interior" || !targetRoomKey) {
+      return true;
+    }
+
+    const objectRoomKey = normalizeTextKey(item.room_name || "");
+    const positionKey = normalizeTextKey(item.position_in_room || "");
+
+    if (
+      objectRoomKey &&
+      (objectRoomKey.includes(targetRoomKey) || targetRoomKey.includes(objectRoomKey))
+    ) {
+      return true;
+    }
+
+    return positionKey.includes(targetRoomKey);
+  });
+
+  const selected = (filteredObjects.length > 0 ? filteredObjects : objects)
+    .slice(0, renderKind === "room-interior" ? 24 : 60);
+
+  return selected
+    .map(
+      (item, index) =>
+        `${index + 1}. ${item.name} | cor: ${item.color || "null"} | material: ${item.material || "null"} | posicao: ${item.position_in_room || "null"}${
+          item.room_name ? ` | comodo: ${item.room_name}` : ""
+        }`
+    )
+    .join("\n");
+}
+
+function buildAutoRoomPrompt(roomName) {
+  return [
+    `Crie um render 3D INTERNO detalhado do ambiente: ${roomName}.`,
+    "Use estritamente o JSON extraido da imagem 2D para objetos, cores, materiais e posicionamento.",
+    "Nao inventar decoracao, materiais ou cores fora do JSON extraido.",
+    "Nao gerar vista externa nem fachada nesse render de comodo."
+  ].join("\n");
+}
+
+function resolveRoomPrompts(roomPrompts, extractedPlanData, roomProgram = []) {
+  const parsedInput = Array.isArray(roomPrompts)
+    ? roomPrompts
+        .map((item, index) => ({
+          room: String(item?.room || `Comodo ${index + 1}`).trim(),
+          prompt: String(item?.prompt || "").trim()
+        }))
+        .filter((item) => item.room)
+    : [];
+  const extractedRoomNames = extractRoomNamesFromData(extractedPlanData);
+  const roomProgramNames = dedupeTextList(roomProgram);
+  const inputRoomNames = dedupeTextList(parsedInput.map((item) => item.room));
+
+  const mergedRoomNames = dedupeTextList([
+    ...extractedRoomNames,
+    ...roomProgramNames,
+    ...inputRoomNames
+  ]);
+
+  if (mergedRoomNames.length === 0) {
+    return parsedInput;
+  }
+
+  const promptByRoomKey = new Map();
+
+  for (const item of parsedInput) {
+    const roomKey = normalizeTextKey(item.room);
+    if (!roomKey) {
+      continue;
+    }
+
+    promptByRoomKey.set(roomKey, item.prompt);
+  }
+
+  return mergedRoomNames.map((roomName) => {
+    const roomKey = normalizeTextKey(roomName);
+    const mappedPrompt = roomKey ? promptByRoomKey.get(roomKey) : "";
+
+    return {
+      room: roomName,
+      prompt: mappedPrompt || buildAutoRoomPrompt(roomName)
+    };
+  });
 }
 
 function findTargetRoomFromExtraction(rooms, label) {
@@ -453,6 +722,8 @@ function build3DPromptFromExtraction({
   );
   const renderKindRules = buildRenderKindRules(renderKind);
   const includeRoomMetrics = renderKind === "room-interior";
+  const visualSummaryBlock = buildVisualSummaryBlock(extractedPlanData);
+  const visualObjectsBlock = buildVisualObjectsBlock(extractedPlanData, label, renderKind);
 
   return [
     "GERAR 3D OBRIGATORIAMENTE COM BASE NOS DADOS EXTRAIDOS DA PLANTA 2D.",
@@ -463,6 +734,13 @@ function build3DPromptFromExtraction({
     "Nao inventar comodos fora do programa e nao remover comodos existentes.",
     "Programa de ambientes do projeto:",
     roomProgramText,
+    "",
+    "BASE VISUAL EXTRAIDA (OBRIGATORIA):",
+    visualSummaryBlock,
+    "",
+    "OBJETOS EXTRAIDOS DA IMAGEM 2D (OBRIGATORIO):",
+    visualObjectsBlock,
+    "REGRA ANTI-ALUCINACAO: use somente os objetos, cores e materiais listados no JSON extraido. Se faltar dado, mantenha visual neutro e nao invente.",
     includeRoomMetrics ? "" : "",
     includeRoomMetrics ? "CONTRATO DE CONSISTENCIA DO COMODO (OBRIGATORIO):" : "",
     includeRoomMetrics
@@ -553,25 +831,31 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
     return res.status(400).json({ error: "Prompt 3D total obrigatorio." });
   }
 
-  if (!facadePrompt) {
-    return res.status(400).json({ error: "Prompt de fachada 3D obrigatorio." });
-  }
-
-  if (roomPrompts.length === 0) {
-    return res.status(400).json({ error: "Lista de prompts de comodos 3D obrigatoria." });
-  }
-
   if (!extractedPlanData) {
     return res.status(400).json({
       error: "Dados extraidos da planta 2D obrigatorios para gerar o pacote 3D."
     });
   }
 
-  const roomProgramText = roomProgram.length
-    ? roomProgram.map((room) => `- ${room}`).join("\n")
+  const extractedRoomNames = extractRoomNamesFromData(extractedPlanData);
+  const roomProgramForPrompt = roomProgram.length > 0 ? roomProgram : extractedRoomNames;
+  const roomProgramText = roomProgramForPrompt.length
+    ? roomProgramForPrompt.map((room) => `- ${room}`).join("\n")
     : "- Programa de ambientes nao informado";
+  const resolvedRoomPrompts = resolveRoomPrompts(
+    roomPrompts,
+    extractedPlanData,
+    roomProgramForPrompt
+  );
 
-  const limitedRooms = roomPrompts.slice(0, maxRooms).map((room, index) => ({
+  if (resolvedRoomPrompts.length === 0) {
+    return res.status(400).json({
+      error:
+        "Nao foi possivel identificar comodos para renderizacao 3D. Verifique se a extracao JSON retornou rooms_detected/objects/rooms."
+    });
+  }
+
+  const limitedRooms = resolvedRoomPrompts.slice(0, maxRooms).map((room, index) => ({
     room: String(room.room || `Comodo ${index + 1}`),
     prompt: String(room.prompt || "").trim()
   }));
@@ -598,28 +882,37 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
       ].join("\n")
     }
   );
-  const facade = await renderPromptWithFallback(
-    build3DPromptFromExtraction({
-      prompt: facadePrompt,
-      label: "Fachada principal",
-      referencePlanPrompt,
-      roomProgramText,
-      extractedPlanData,
-      consistencyLock,
-      renderKind: "facade-exterior"
-    }),
-    "Fachada principal",
-    {
-      referenceImageDataUrl: referencePlanImageDataUrl || undefined,
-      referenceImageDataUrls: additionalReferenceImageDataUrls,
-      generationConfig: buildGenerationConfigByRenderKind("facade-exterior"),
-      referenceInstruction: [
-        "A imagem anexada e a planta 2D oficial do projeto.",
-        "Use essa planta apenas como apoio visual para os dados estruturados extraidos.",
-        ...strict3DRules
-      ].join("\n")
-    }
-  );
+  const facade = facadePrompt
+    ? await renderPromptWithFallback(
+        build3DPromptFromExtraction({
+          prompt: facadePrompt,
+          label: "Fachada principal",
+          referencePlanPrompt,
+          roomProgramText,
+          extractedPlanData,
+          consistencyLock,
+          renderKind: "facade-exterior"
+        }),
+        "Fachada principal",
+        {
+          referenceImageDataUrl: referencePlanImageDataUrl || undefined,
+          referenceImageDataUrls: additionalReferenceImageDataUrls,
+          generationConfig: buildGenerationConfigByRenderKind("facade-exterior"),
+          referenceInstruction: [
+            "A imagem anexada e a planta 2D oficial do projeto.",
+            "Use essa planta apenas como apoio visual para os dados estruturados extraidos.",
+            ...strict3DRules
+          ].join("\n")
+        }
+      )
+    : {
+        ok: true,
+        skipped: true,
+        result: {
+          text: "Render de fachada desativado neste pacote para evitar duplicidade com o 3D total.",
+          imageDataUrl: null
+        }
+      };
 
   const rooms = [];
 
@@ -664,7 +957,7 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
     ok: !hasErrors,
     partial: hasErrors,
     summary: {
-      requestedRooms: roomPrompts.length,
+      requestedRooms: resolvedRoomPrompts.length,
       renderedRooms: rooms.length
     },
     results: {
@@ -701,8 +994,10 @@ app.post("/api/plan/render-3d-item", async (req, res) => {
     });
   }
 
-  const roomProgramText = roomProgram.length
-    ? roomProgram.map((room) => `- ${room}`).join("\n")
+  const extractedRoomNames = extractRoomNamesFromData(extractedPlanData);
+  const roomProgramForPrompt = roomProgram.length > 0 ? roomProgram : extractedRoomNames;
+  const roomProgramText = roomProgramForPrompt.length
+    ? roomProgramForPrompt.map((room) => `- ${room}`).join("\n")
     : "- Programa de ambientes nao informado";
 
   const enhancedPrompt = build3DPromptFromExtraction({

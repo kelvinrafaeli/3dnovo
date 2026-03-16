@@ -274,6 +274,37 @@ textarea {
   margin-bottom: 0.55rem;
 }
 
+.render-card-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.6rem;
+}
+
+.edit-render-btn {
+  border: 1px solid rgba(95, 66, 27, 0.34);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #5a3713;
+  padding: 0.5rem 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.edit-render-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 7px 14px rgba(94, 56, 15, 0.18);
+}
+
+.edit-render-btn:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
 .render-rooms-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

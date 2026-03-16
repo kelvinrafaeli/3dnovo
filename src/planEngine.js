@@ -131,12 +131,31 @@ function buildContextText(data, lotMetrics) {
   ].join("\n");
 }
 
+function buildRenderContextText(data, lotMetrics) {
+  return [
+    "PARAMETROS ARQUITETONICOS PARA COMPOSICAO VISUAL (NAO RENDERIZAR COMO TEXTO):",
+    `- Objetivo do projeto: ${data.objective}`,
+    `- Tipo de terreno: ${data.terrainType}`,
+    `- Frente: ${data.frontMeters} m`,
+    `- Fundos: ${data.backMeters} m`,
+    `- Lateral direita: ${data.rightMeters} m`,
+    `- Lateral esquerda: ${data.leftMeters} m`,
+    `- Largura media de referencia: ${lotMetrics.widthMeters} m`,
+    `- Profundidade media de referencia: ${lotMetrics.depthMeters} m`,
+    `- Area calculada obrigatoria do lote: ${lotMetrics.areaM2} m2`,
+    `- Topografia: ${data.topography}`,
+    `- Tipo de solo: ${data.soilType}`,
+    `- Infraestrutura: agua=${data.hasWater ? "sim" : "nao"}, esgoto=${data.hasSewer ? "sim" : "nao"}, energia=${data.hasElectricity ? "sim" : "nao"}`
+  ].join("\n");
+}
+
 function createGenerationPackage(inputData) {
   const data = terrainFormSchema.parse(inputData);
   const lotMetrics = calculateLotMetrics(data);
   const suggestedRooms = uniqueRooms(suggestRoomsByObjective(data.objective));
   const mandatoryRoomsText = suggestedRooms.map((room) => `- ${room}`).join("\n");
   const contextText = buildContextText(data, lotMetrics);
+  const renderContextText = buildRenderContextText(data, lotMetrics);
 
   const prompt2DTechnical = [
     "Voce e um arquiteto especializado em plantas tecnicas brasileiras.",
@@ -155,17 +174,21 @@ function createGenerationPackage(inputData) {
     "Inclua nomes dos comodos em portugues com fonte elegante e legivel.",
     "Mantenha proporcao realista, escala coerente e alta nitidez.",
     "NAO usar estilo blueprint/tecnico. NAO usar fundo azul escuro. NAO mostrar cotas com linhas de chamada.",
+    "Imagem LIMPA: sem quadro lateral, sem tabela, sem carimbo, sem bloco de briefing e sem legenda tecnica externa.",
+    "PROIBIDO inserir na imagem dados de cliente, documento, CEP, endereco, orcamento, objetivo, medidas em caixa de texto, topografia, solo, vizinhanca ou infraestrutura.",
+    "Nao incluir nenhum texto fora dos nomes dos comodos.",
     "Mostrar sombras suaves e iluminacao natural para dar profundidade.",
     "Inclua obrigatoriamente TODOS os ambientes listados abaixo:",
     mandatoryRoomsText,
     "",
-    contextText
+    renderContextText
   ].join("\n");
 
   const prompt3DTotal = [
     "Crie um modelo 3D completo da planta com volumetria, cobertura e materiais base.",
     "Gerar vista isometrica geral, cortes simplificados e imagem externa da fachada principal.",
     "Estilo realista, iluminacao natural diurna e escala humana.",
+    "Imagem LIMPA: sem texto, sem quadro lateral, sem tabela, sem carimbo, sem legenda e sem watermark.",
     "SER FIEL E RIGOROSAMENTE IGUAL a planta 2D aprovada.",
     "Nao adicionar, mover ou remover paredes.",
     "Nao inventar portas e janelas em locais nao definidos na planta 2D.",
@@ -173,7 +196,7 @@ function createGenerationPackage(inputData) {
     "O modelo 3D deve incluir obrigatoriamente todos os ambientes abaixo:",
     mandatoryRoomsText,
     "",
-    contextText
+    renderContextText
   ].join("\n");
 
   const roomPrompts = suggestedRooms.map((roomName) => ({
@@ -187,16 +210,18 @@ function createGenerationPackage(inputData) {
       "Manter compatibilidade com a planta geral, usando medidas reais do comodo extraidas da planta.",
       "Render interno somente do ambiente foco, com camera dentro do comodo.",
       "Nao renderizar fachada, cobertura externa ou vista aerea nesse render de comodo.",
+      "Imagem LIMPA: sem texto, sem quadro lateral, sem tabela, sem carimbo, sem legenda e sem watermark.",
       "",
-      contextText
+      renderContextText
     ].join("\n")
   }));
 
   const facadePrompt = [
     "Crie um estudo 3D da fachada principal e secundaria da edificacao.",
     "Entregar volumetria, materiais sugeridos, esquadria e hierarquia visual da entrada.",
+    "Imagem LIMPA: sem texto, sem quadro lateral, sem tabela, sem carimbo, sem legenda e sem watermark.",
     "",
-    contextText
+    renderContextText
   ].join("\n");
 
   return {

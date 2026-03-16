@@ -246,6 +246,9 @@
         <div class="result-block" id="render-output" hidden>
           <h3>Retorno da Renderizacao 2D</h3>
           <img id="render-image" alt="Renderizacao da planta 2D" hidden />
+          <div class="render-card-actions">
+            <button id="edit-2d-btn" type="button" class="edit-render-btn">Editar Imagem 2D</button>
+          </div>
           <pre id="render-text"></pre>
         </div>
 
@@ -261,12 +264,18 @@
             <article class="render-card">
               <h4>3D Total</h4>
               <img id="render-3d-total-image" alt="Renderizacao 3D total" hidden />
+              <div class="render-card-actions">
+                <button id="edit-3d-total-btn" type="button" class="edit-render-btn">Editar Imagem 3D Total</button>
+              </div>
               <pre id="render-3d-total-text"></pre>
             </article>
 
-            <article class="render-card">
+            <article class="render-card" id="render-3d-facade-card">
               <h4>Fachada 3D</h4>
               <img id="render-3d-facade-image" alt="Renderizacao 3D da fachada" hidden />
+              <div class="render-card-actions">
+                <button id="edit-3d-facade-btn" type="button" class="edit-render-btn">Editar Imagem de Fachada</button>
+              </div>
               <pre id="render-3d-facade-text"></pre>
             </article>
           </div>

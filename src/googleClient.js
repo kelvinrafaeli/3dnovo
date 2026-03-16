@@ -282,64 +282,54 @@ function buildPlanExtractionPrompt(roomProgram, plan2DPrompt, mode = "full") {
     ? roomProgram.map((room) => `- ${room}`).join("\n")
     : "- Nao informado";
 
-  if (mode === "compact") {
-    return [
-      "Analise a imagem da planta 2D anexada.",
-      "Retorne SOMENTE JSON valido, sem markdown.",
-      "Se algum dado nao estiver legivel, use null.",
-      "Calcule total_area_m2 obrigatoriamente por largura x profundidade do lote.",
-      "Quando houver 4 lados, use: largura = media(front_m, back_m) e profundidade = media(right_m, left_m).",
-      "Nao invente area do lote (ex.: 300 m2) sem base nas medidas extraidas.",
-      "Schema obrigatorio:",
-      "{",
-      '  "confidence": { "score_0_100": number|null, "notes": string|null },',
-      '  "lot": { "front_m": number|null, "back_m": number|null, "left_m": number|null, "right_m": number|null },',
-      '  "rooms": [{ "name": string, "dimensions": { "width_m": number|null, "depth_m": number|null, "area_m2": number|null }, "doors": [], "windows": [], "notes": string|null }],',
-      '  "dimensions_and_quotas": string[],',
-      '  "strict_constraints_for_3d": string[]',
-      "}",
-      "",
-      "Programa de ambientes esperado:",
-      roomList,
-      "",
-      plan2DPrompt ? `Prompt original da planta 2D:\n${plan2DPrompt}` : ""
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }
+  const userRequestedPrompt = [
+    "Analyze this interior design image and convert all visual information into a highly detailed, structured JSON format.",
+    "Focus specifically on isolating individual objects.",
+    "For each key object, extract its precise color (using descriptive names or hex codes) and its exact material (e.g., matte leather, brushed steel, oak wood).",
+    "Include JSON keys for 'room_style', 'overall_color_palette', and an 'objects' array containing 'name', 'color', 'material', and 'position_in_room'.",
+    "Output ONLY valid JSON and format the output as a copyable JSON code block using Markdown."
+  ].join(" ");
+
+  const schemaLines = mode === "compact"
+    ? [
+        "Schema obrigatorio:",
+        "{",
+        '  "room_style": string|null,',
+        '  "overall_color_palette": string[]|string|null,',
+        '  "rooms_detected": string[],',
+        '  "objects": [{ "name": string, "color": string|null, "material": string|null, "position_in_room": string|null, "room_name": string|null }],',
+        '  "confidence": { "score_0_100": number|null, "notes": string|null }',
+        "}"
+      ]
+    : [
+        "Schema JSON obrigatorio:",
+        "{",
+        '  "room_style": string|null,',
+        '  "overall_color_palette": string[]|string|null,',
+        '  "rooms_detected": string[],',
+        '  "objects": [',
+        "    {",
+        '      "name": string,',
+        '      "color": string|null,',
+        '      "material": string|null,',
+        '      "position_in_room": string|null,',
+        '      "room_name": string|null',
+        "    }",
+        "  ],",
+        '  "confidence": { "score_0_100": number|null, "notes": string|null },',
+        '  "strict_constraints_for_3d": string[]',
+        "}"
+      ];
 
   return [
-    "Analise a imagem da planta 2D anexada e extraia todos os dados tecnicos possiveis com maxima fidelidade.",
-    "Nao invente informacao nao visivel; quando nao for legivel, preencha null e descreva em observacoes.",
-    "Calcule total_area_m2 obrigatoriamente por largura x profundidade do lote.",
-    "Quando houver 4 lados, use: largura = media(front_m, back_m) e profundidade = media(right_m, left_m).",
-    "Nao invente area do lote (ex.: 300 m2) sem base nas medidas extraidas.",
-    "Retorne SOMENTE JSON valido, sem markdown.",
-    "Schema JSON obrigatorio:",
-    "{",
-    '  "confidence": { "score_0_100": number, "notes": string },',
-    '  "overall": { "style": string, "north_orientation": string|null, "total_area_m2": number|null },',
-    '  "lot": { "front_m": number|null, "back_m": number|null, "left_m": number|null, "right_m": number|null },',
-    '  "rooms": [',
-    "    {",
-    '      "name": string,',
-    '      "dimensions": { "width_m": number|null, "depth_m": number|null, "area_m2": number|null },',
-    '      "floor_level": string|null,',
-    '      "adjacent_to": string[],',
-    '      "doors": [{ "id": string, "width_m": number|null, "position": string|null, "opens_to": string|null }],',
-    '      "windows": [{ "id": string, "width_m": number|null, "height_m": number|null, "position": string|null }],',
-    '      "notes": string|null',
-    "    }",
-    "  ],",
-    '  "openings_global": {',
-    '    "doors_total": number|null,',
-    '    "windows_total": number|null,',
-    '    "rules": string[]',
-    "  },",
-    '  "wall_rules": { "thickness_cm": number[]|null, "load_bearing_notes": string|null },',
-    '  "dimensions_and_quotas": string[],',
-    '  "strict_constraints_for_3d": string[]',
-    "}",
+    userRequestedPrompt,
+    "",
+    "Regras adicionais obrigatorias:",
+    "- Nao invente objetos, cores ou materiais que nao estejam visiveis na imagem.",
+    "- Se um dado nao estiver legivel, use null.",
+    "- Em objects[].room_name, prefira usar exatamente os nomes do programa de ambientes esperado quando houver correspondencia.",
+    "- Em rooms_detected, retorne os comodos detectados na imagem usando nomes limpos e sem duplicidade.",
+    ...schemaLines,
     "",
     "Programa de ambientes esperado:",
     roomList,
@@ -359,8 +349,11 @@ async function attemptExtractJsonWithModel({
   const extractionData = await callGenerateContent(modelName, apiKey, prompt, {
     expectImage: false,
     referenceImageDataUrl,
-    referenceInstruction:
-      "A imagem anexada e a planta 2D oficial. Extraia medidas, cotas, comodos, portas e janelas com fidelidade tecnica.",
+    referenceInstruction: [
+      "A imagem anexada e a planta 2D humanizada oficial do projeto.",
+      "Extraia fielmente estilo do ambiente, paleta de cores, objetos, materiais e posicao de cada objeto no comodo.",
+      "Nao invente objetos, cores ou materiais que nao estejam visiveis."
+    ].join(" "),
     generationConfig: {
       temperature: 0.1,
       responseMimeType: "application/json"
@@ -399,7 +392,170 @@ async function attemptExtractJsonWithModel({
   };
 }
 
-function normalizeRooms(rawRooms, roomProgram) {
+function normalizeTextKey(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function dedupeTextList(values) {
+  const output = [];
+  const seen = new Set();
+
+  for (const value of Array.isArray(values) ? values : []) {
+    const normalized = String(value || "").trim();
+    const key = normalizeTextKey(normalized);
+
+    if (!key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    output.push(normalized);
+  }
+
+  return output;
+}
+
+function findBestRoomNameMatch(rawValue, roomCandidates) {
+  const candidates = dedupeTextList(roomCandidates);
+  const source = String(rawValue || "").trim();
+
+  if (!source || candidates.length === 0) {
+    return null;
+  }
+
+  const sourceKey = normalizeTextKey(source);
+  let bestRoom = null;
+  let bestScore = 0;
+
+  for (const roomName of candidates) {
+    const roomKey = normalizeTextKey(roomName);
+
+    if (!roomKey) {
+      continue;
+    }
+
+    let score = 0;
+
+    if (sourceKey === roomKey) {
+      score = 100;
+    } else if (sourceKey.includes(roomKey) || roomKey.includes(sourceKey)) {
+      score = 80;
+    } else {
+      const sourceTokens = sourceKey.split(" ").filter(Boolean);
+      const matchedTokens = sourceTokens.filter((token) => roomKey.includes(token)).length;
+      score = matchedTokens * 10;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestRoom = roomName;
+    }
+  }
+
+  return bestScore >= 20 ? bestRoom : null;
+}
+
+function normalizeColorPalette(rawValue) {
+  if (Array.isArray(rawValue)) {
+    return dedupeTextList(rawValue.map((item) => String(item || "").trim()).filter(Boolean));
+  }
+
+  if (typeof rawValue === "string") {
+    return dedupeTextList(
+      rawValue
+        .split(/[\n,;|]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    );
+  }
+
+  return [];
+}
+
+function normalizeVisualObjects(rawObjects, roomCandidates) {
+  const source = Array.isArray(rawObjects) ? rawObjects : [];
+
+  return source
+    .map((item, index) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const name = String(item.name || item.object || item.item || "").trim();
+
+      if (!name) {
+        return null;
+      }
+
+      const color = String(item.color || item.colour || "").trim() || null;
+      const material = String(item.material || item.finish || item.texture || "").trim() || null;
+      const positionInRoom = String(
+        item.position_in_room || item.position || item.location || ""
+      ).trim() || null;
+      const explicitRoom = String(item.room_name || item.room || item.environment || "").trim();
+      const roomName =
+        findBestRoomNameMatch(explicitRoom, roomCandidates) ||
+        findBestRoomNameMatch(positionInRoom, roomCandidates) ||
+        null;
+
+      return {
+        name: name || `objeto_${index + 1}`,
+        color,
+        material,
+        position_in_room: positionInRoom,
+        room_name: roomName
+      };
+    })
+    .filter(Boolean);
+}
+
+function collectDetectedRooms(rawData, normalizedObjects, roomProgram) {
+  const data = rawData && typeof rawData === "object" ? rawData : {};
+  const fromSchema = Array.isArray(data.rooms_detected) ? data.rooms_detected : [];
+  const fromObjects = normalizedObjects
+    .map((item) => String(item?.room_name || "").trim())
+    .filter(Boolean);
+
+  return dedupeTextList([
+    ...fromSchema,
+    ...fromObjects,
+    ...(Array.isArray(roomProgram) ? roomProgram : [])
+  ]);
+}
+
+function mergeRoomsWithDetectedRooms(normalizedRooms, detectedRooms) {
+  const rooms = Array.isArray(normalizedRooms) ? [...normalizedRooms] : [];
+  const detected = dedupeTextList(detectedRooms);
+  const existingKeys = new Set(rooms.map((room) => normalizeTextKey(room?.name || "")).filter(Boolean));
+
+  for (const roomName of detected) {
+    const roomKey = normalizeTextKey(roomName);
+
+    if (!roomKey || existingKeys.has(roomKey)) {
+      continue;
+    }
+
+    existingKeys.add(roomKey);
+    rooms.push({
+      name: roomName,
+      dimensions: { width_m: null, depth_m: null, area_m2: null },
+      floor_level: null,
+      adjacent_to: [],
+      doors: [],
+      windows: [],
+      notes: "Comodo incluido por consistencia do programa base quando nao retornado na lista estruturada da extracao."
+    });
+  }
+
+  return rooms;
+}
+
+function normalizeRooms(rawRooms, roomProgram, detectedRooms = []) {
   const source = Array.isArray(rawRooms) ? rawRooms : [];
   const normalizedFromSource = source
     .map((item) => {
@@ -440,7 +596,11 @@ function normalizeRooms(rawRooms, roomProgram) {
     return normalizedFromSource;
   }
 
-  return (Array.isArray(roomProgram) ? roomProgram : []).map((roomName) => ({
+  const fallbackRoomNames = dedupeTextList(
+    Array.isArray(detectedRooms) && detectedRooms.length > 0 ? detectedRooms : roomProgram
+  );
+
+  return fallbackRoomNames.map((roomName) => ({
     name: roomName,
     dimensions: { width_m: null, depth_m: null, area_m2: null },
     floor_level: null,
@@ -481,6 +641,20 @@ function calculateLotAreaFromDimensions(lot, fallbackArea) {
 
 function normalizeExtractedPlanData(rawData, roomProgram) {
   const data = rawData && typeof rawData === "object" ? rawData : {};
+  const roomProgramList = Array.isArray(roomProgram) ? roomProgram : [];
+  const roomCandidates = dedupeTextList([
+    ...roomProgramList,
+    ...(Array.isArray(data.rooms_detected) ? data.rooms_detected : []),
+    ...(Array.isArray(data.rooms)
+      ? data.rooms.map((room) => (typeof room === "string" ? room : room?.name))
+      : [])
+  ]);
+  const normalizedObjects = normalizeVisualObjects(data.objects, roomCandidates);
+  const detectedRooms = collectDetectedRooms(data, normalizedObjects, roomProgramList);
+  const normalizedRoomStyle = String(
+    data.room_style ?? data.overall?.style ?? data.style ?? ""
+  ).trim() || null;
+  const normalizedColorPalette = normalizeColorPalette(data.overall_color_palette);
 
   const strictConstraints = Array.isArray(data.strict_constraints_for_3d)
     ? data.strict_constraints_for_3d
@@ -488,7 +662,8 @@ function normalizeExtractedPlanData(rawData, roomProgram) {
         "Ser fiel e rigorosamente igual a planta 2D.",
         "Nao inventar portas e janelas.",
         "Nao alterar geometria principal sem evidencias na planta.",
-        "Calcular a area total do lote por largura x profundidade, sem inventar m2."
+        "Calcular a area total do lote por largura x profundidade, sem inventar m2.",
+        "Usar apenas objetos, cores e materiais presentes no JSON extraido da imagem 2D."
       ];
 
   const normalizedLot =
@@ -505,6 +680,8 @@ function normalizeExtractedPlanData(rawData, roomProgram) {
     normalizedLot,
     data?.overall?.total_area_m2 ?? null
   );
+  const normalizedRooms = normalizeRooms(data.rooms || data.comodos, roomProgramList, detectedRooms);
+  const mergedRooms = mergeRoomsWithDetectedRooms(normalizedRooms, detectedRooms);
 
   const normalized = {
     confidence:
@@ -516,16 +693,24 @@ function normalizeExtractedPlanData(rawData, roomProgram) {
             notes: data.confidence.notes ?? null
           }
         : { score_0_100: null, notes: null },
+    room_style: normalizedRoomStyle,
+    overall_color_palette: normalizedColorPalette,
+    rooms_detected: detectedRooms,
+    objects: normalizedObjects,
     overall:
       data.overall && typeof data.overall === "object"
         ? {
-            style: data.overall.style ?? null,
+            style: data.overall.style ?? normalizedRoomStyle,
             north_orientation: data.overall.north_orientation ?? null,
             total_area_m2: normalizedTotalArea
           }
-        : { style: null, north_orientation: null, total_area_m2: normalizedTotalArea },
+        : {
+            style: normalizedRoomStyle,
+            north_orientation: null,
+            total_area_m2: normalizedTotalArea
+          },
     lot: normalizedLot,
-    rooms: normalizeRooms(data.rooms || data.comodos, roomProgram),
+    rooms: mergedRooms,
     openings_global:
       data.openings_global && typeof data.openings_global === "object"
         ? {
