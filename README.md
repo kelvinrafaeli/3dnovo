@@ -43,8 +43,10 @@ PORT=3000
 4. Inicie servidor:
 
 ```bash
-npm run dev
+npm run dev ( em outro terminal npm run dev:api)
 ```
+
+
 
 5. Acesse:
 

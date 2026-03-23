@@ -99,6 +99,26 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "3dnovo-plan-service" });
 });
 
+// --- Style example image for 3D isometric renders ---
+const DEFAULT_3D_STYLE_EXAMPLE_URL = "https://i.pinimg.com/736x/01/c2/ac/01c2acab791234904578e0af7bfb5a01.jpg";
+const imageCache = new Map();
+
+async function fetchImageAsDataUrl(url) {
+  if (imageCache.has(url)) {
+    return imageCache.get(url);
+  }
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch image: ${response.status}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const contentType = response.headers.get("content-type") || "image/jpeg";
+  const dataUrl = `data:${contentType};base64,${buffer.toString("base64")}`;
+  imageCache.set(url, dataUrl);
+  console.log(`[fetchImageAsDataUrl] Cached image from ${url} (${(buffer.length / 1024).toFixed(0)}KB)`);
+  return dataUrl;
+}
+
 app.post("/api/plan/generate", (req, res) => {
   try {
     const generationPackage = createGenerationPackage(req.body);
@@ -897,6 +917,22 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
     prompt: String(room.prompt || "").trim()
   }));
 
+  // Fetch 3D style example image (for isometric reference)
+  let styleExampleDataUrl = String(req.body.styleExampleImageDataUrl || "").trim() || null;
+  if (!styleExampleDataUrl && totalPrompt) {
+    try {
+      styleExampleDataUrl = await fetchImageAsDataUrl(DEFAULT_3D_STYLE_EXAMPLE_URL);
+      console.log("[render-3d-package] Style example fetched successfully");
+    } catch (styleErr) {
+      console.warn("[render-3d-package] Could not fetch style example:", styleErr.message);
+    }
+  }
+
+  const totalReferenceImages = [...additionalReferenceImageDataUrls];
+  if (styleExampleDataUrl) {
+    totalReferenceImages.push(styleExampleDataUrl);
+  }
+
   const total = totalPrompt
     ? await renderPromptWithFallback(
         build3DPromptFromExtraction({
@@ -911,15 +947,25 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
         "Volume total da casa",
         {
           referenceImageDataUrl: referencePlanImageDataUrl || undefined,
-          referenceImageDataUrls: additionalReferenceImageDataUrls,
+          referenceImageDataUrls: totalReferenceImages,
           generationConfig: buildGenerationConfigByRenderKind("total-exterior"),
-          referenceInstruction: [
-            "The attached image is the 2D FLOOR PLAN — use as LAYOUT REFERENCE ONLY (room positions, walls, doors).",
-            "Generate a 3D ARCHITECTURAL SCALE MODEL (maquete) photographed at a 30-45 degree angle.",
-            "The output MUST show walls with HEIGHT, furniture with VOLUME, and PERSPECTIVE depth.",
-            "NEVER generate a flat 2D floor plan or top-down orthographic view.",
-            ...strict3DRules
-          ].join("\n")
+          referenceInstruction: styleExampleDataUrl
+            ? [
+                "You are receiving TWO reference images:",
+                "IMAGE 1 (floor plan): Use ONLY for room layout — wall positions, doors, windows, room sizes.",
+                "IMAGE 2 (3D style example): Generate the output in THIS EXACT 3D VISUAL STYLE — isometric cutaway architectural model with walls showing height, 3D furniture with volume, perspective depth.",
+                "Combine: LAYOUT from image 1 + VISUAL STYLE from image 2.",
+                "The output must look like a physical architectural scale model (maquete) photographed from above at an angle.",
+                "NEVER generate a flat 2D floor plan or top-down orthographic view.",
+                ...strict3DRules
+              ].join("\n")
+            : [
+                "The attached image is the 2D FLOOR PLAN — use as LAYOUT REFERENCE ONLY (room positions, walls, doors).",
+                "Generate a 3D ARCHITECTURAL SCALE MODEL (maquete) photographed at a 30-45 degree angle.",
+                "The output MUST show walls with HEIGHT, furniture with VOLUME, and PERSPECTIVE depth.",
+                "NEVER generate a flat 2D floor plan or top-down orthographic view.",
+                ...strict3DRules
+              ].join("\n")
         }
       )
     : { ok: true, skipped: true, result: null };
