@@ -170,27 +170,41 @@ async function callGenerateContent(model, apiKey, promptText, options = {}) {
   const parts = [];
   const parsedReferenceImages = collectReferenceImages(options);
   const expectImage = options.expectImage === true;
+  const promptBeforeImage = options.promptBeforeImage === true;
 
-  for (const parsedReferenceImage of parsedReferenceImages) {
-    parts.push({
-      inlineData: {
-        mimeType: parsedReferenceImage.mimeType,
-        data: parsedReferenceImage.data
-      }
-    });
-  }
-
-  if (typeof options.referenceInstruction === "string" && options.referenceInstruction.trim()) {
-    parts.push({ text: options.referenceInstruction.trim() });
-  }
-
+  // Build the prompt text part
+  let promptPart;
   if (expectImage) {
     const imageResolution = process.env.IMAGE_OUTPUT_RESOLUTION || "1024x1024";
-    parts.push({
+    promptPart = {
       text: `[OUTPUT IMAGE REQUIREMENTS: Generate the image at ${imageResolution} resolution, highest quality, ultra detailed.]\n\n${promptText}`
-    });
+    };
   } else {
-    parts.push({ text: promptText });
+    promptPart = { text: promptText };
+  }
+
+  // Build image parts
+  const imageParts = parsedReferenceImages.map((img) => ({
+    inlineData: { mimeType: img.mimeType, data: img.data }
+  }));
+
+  // Build reference instruction part
+  const instructionPart = (typeof options.referenceInstruction === "string" && options.referenceInstruction.trim())
+    ? { text: options.referenceInstruction.trim() }
+    : null;
+
+  if (promptBeforeImage) {
+    // Prompt FIRST → establishes the output style (3D keywords)
+    // Then reference instruction explaining how to use the image
+    // Image LAST → treated as secondary layout reference, not style guide
+    parts.push(promptPart);
+    if (instructionPart) parts.push(instructionPart);
+    parts.push(...imageParts);
+  } else {
+    // Default order: Image first (strongest signal), instruction, then prompt
+    parts.push(...imageParts);
+    if (instructionPart) parts.push(instructionPart);
+    parts.push(promptPart);
   }
 
   const baseGenerationConfig = expectImage
@@ -327,6 +341,7 @@ function buildPlanExtractionPrompt(roomProgram, plan2DPrompt, mode = "full") {
         '  "room_style": string|null,',
         '  "overall_color_palette": string[]|string|null,',
         '  "rooms_detected": string[],',
+        '  "rooms": [{ "name": string, "dimensions": { "width_m": number|null, "depth_m": number|null, "area_m2": number|null }, "adjacent_to": string[], "position_description": string|null }],',
         '  "objects": [{ "name": string, "color": string|null, "material": string|null, "position_in_room": string|null, "room_name": string|null }],',
         '  "confidence": { "score_0_100": number|null, "notes": string|null }',
         "}"
@@ -337,6 +352,14 @@ function buildPlanExtractionPrompt(roomProgram, plan2DPrompt, mode = "full") {
         '  "room_style": string|null,',
         '  "overall_color_palette": string[]|string|null,',
         '  "rooms_detected": string[],',
+        '  "rooms": [',
+        "    {",
+        '      "name": string,',
+        '      "dimensions": { "width_m": number|null, "depth_m": number|null, "area_m2": number|null },',
+        '      "adjacent_to": string[] (names of rooms sharing a wall or opening),',
+        '      "position_description": string|null (e.g. "top-left corner", "center-right", "bottom of the plan next to garage")',
+        "    }",
+        "  ],",
         '  "objects": [',
         "    {",
         '      "name": string,',
@@ -359,6 +382,9 @@ function buildPlanExtractionPrompt(roomProgram, plan2DPrompt, mode = "full") {
     "- Se um dado nao estiver legivel, use null.",
     "- Em objects[].room_name, prefira usar exatamente os nomes do programa de ambientes esperado quando houver correspondencia.",
     "- Em rooms_detected, retorne os comodos detectados na imagem usando nomes limpos e sem duplicidade.",
+    "- IMPORTANTE: Para cada room em 'rooms', preencha 'adjacent_to' com os nomes dos comodos que compartilham parede ou abertura.",
+    "- IMPORTANTE: Para cada room em 'rooms', preencha 'position_description' descrevendo a posicao do comodo na planta (ex: 'canto superior esquerdo', 'centro direita', 'fundo ao lado da garagem').",
+    "- Estime 'dimensions' (width_m, depth_m, area_m2) com base nas proporcoes visiveis na planta.",
     ...schemaLines,
     "",
     "Programa de ambientes esperado:",
@@ -613,6 +639,7 @@ function normalizeRooms(rawRooms, roomProgram, detectedRooms = []) {
           },
           floor_level: item.floor_level ?? item.piso ?? null,
           adjacent_to: Array.isArray(item.adjacent_to) ? item.adjacent_to : [],
+          position_description: item.position_description ?? null,
           doors: Array.isArray(item.doors) ? item.doors : [],
           windows: Array.isArray(item.windows) ? item.windows : [],
           notes: item.notes ?? item.observacoes ?? null

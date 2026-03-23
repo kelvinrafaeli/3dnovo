@@ -99,8 +99,12 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "3dnovo-plan-service" });
 });
 
-// --- Style example image for 3D isometric renders ---
-const DEFAULT_3D_STYLE_EXAMPLE_URL = "https://i.pinimg.com/736x/01/c2/ac/01c2acab791234904578e0af7bfb5a01.jpg";
+// --- Style example images for 3D isometric renders ---
+// Multiple URLs for resilience. These should show CUTAWAY isometric views (roof removed, rooms visible).
+const ISOMETRIC_STYLE_EXAMPLE_URLS = [
+  "https://i.pinimg.com/736x/01/c2/ac/01c2acab791234904578e0af7bfb5a01.jpg"
+];
+const DEFAULT_3D_STYLE_EXAMPLE_URL = ISOMETRIC_STYLE_EXAMPLE_URLS[0];
 const imageCache = new Map();
 
 async function fetchImageAsDataUrl(url) {
@@ -113,10 +117,26 @@ async function fetchImageAsDataUrl(url) {
   }
   const buffer = Buffer.from(await response.arrayBuffer());
   const contentType = response.headers.get("content-type") || "image/jpeg";
+  // Validate it's actually an image (not an error page)
+  if (buffer.length < 1000 || !contentType.startsWith("image/")) {
+    throw new Error(`Response is not a valid image (${buffer.length} bytes, type: ${contentType})`);
+  }
   const dataUrl = `data:${contentType};base64,${buffer.toString("base64")}`;
   imageCache.set(url, dataUrl);
   console.log(`[fetchImageAsDataUrl] Cached image from ${url} (${(buffer.length / 1024).toFixed(0)}KB)`);
   return dataUrl;
+}
+
+async function fetchFirstAvailableStyleExample() {
+  for (const url of ISOMETRIC_STYLE_EXAMPLE_URLS) {
+    try {
+      return await fetchImageAsDataUrl(url);
+    } catch (err) {
+      console.warn(`[fetchFirstAvailableStyleExample] Failed for ${url}:`, err.message);
+    }
+  }
+  console.warn("[fetchFirstAvailableStyleExample] All style example URLs failed");
+  return null;
 }
 
 app.post("/api/plan/generate", (req, res) => {
@@ -724,8 +744,8 @@ function buildGenerationConfigByRenderKind(renderKind) {
 
   if (renderKind === "total-exterior") {
     return {
-      temperature: 0.05,
-      topP: 0.4,
+      temperature: 0.9,
+      topP: 0.95,
       maxOutputTokens: 4096
     };
   }
@@ -737,6 +757,101 @@ function buildGenerationConfigByRenderKind(renderKind) {
   };
 }
 
+function buildSpatialLayoutDescription(rooms) {
+  if (!Array.isArray(rooms) || rooms.length === 0) return "";
+
+  const lines = [
+    "SPATIAL LAYOUT (exact room positions — follow this precisely):"
+  ];
+
+  for (const room of rooms) {
+    const name = room.name || room.room_name || "Room";
+    const dims = room.dimensions || {};
+    const width = dims.width_m;
+    const depth = dims.depth_m;
+    const area = dims.area_m2 || room.area_m2 || room.area;
+    const adjacent = Array.isArray(room.adjacent_to) && room.adjacent_to.length > 0
+      ? room.adjacent_to.join(", ")
+      : null;
+    const position = room.position_description || null;
+    const doors = Array.isArray(room.doors) ? room.doors.length : 0;
+    const windows = Array.isArray(room.windows) ? room.windows.length : 0;
+
+    let desc = `- ${name}`;
+    if (width && depth) desc += ` (${width}m x ${depth}m)`;
+    else if (area) desc += ` (${area}m2)`;
+    if (position) desc += ` [POSITION: ${position}]`;
+    if (adjacent) desc += ` → shares wall with: ${adjacent}`;
+    if (doors > 0) desc += ` | ${doors} door(s)`;
+    if (windows > 0) desc += ` | ${windows} window(s)`;
+    lines.push(desc);
+  }
+
+  return lines.join("\n");
+}
+
+function buildLeanIsometricPrompt({
+  prompt,
+  extractedPlanData,
+  roomProgramText
+}) {
+  const rooms = Array.isArray(extractedPlanData?.rooms) ? extractedPlanData.rooms : [];
+
+  // Build detailed room descriptions with furniture
+  const roomDescLines = rooms.map((room) => {
+    const name = room.name || room.room_name || "Room";
+    const area = room.dimensions?.area_m2 || room.area_m2 || room.area || "";
+    const furniture = Array.isArray(room.furniture)
+      ? room.furniture.map(f => typeof f === "string" ? f : (f.name || f.item || "")).filter(Boolean).join(", ")
+      : "";
+    let line = area ? `- ${name} (${area}m2)` : `- ${name}`;
+    if (furniture) line += `: contains ${furniture}`;
+    return line;
+  });
+  if (roomDescLines.length === 0) {
+    roomDescLines.push(...roomProgramText.split("\n").filter(Boolean));
+  }
+
+  const style = String(
+    extractedPlanData?.room_style || extractedPlanData?.overall?.style || ""
+  ).trim();
+
+  // Build spatial layout map from adjacency data
+  const spatialLayout = buildSpatialLayoutDescription(rooms);
+
+  // Use proven 3D rendering keywords that trigger isometric generation in image models
+  return [
+    "Tiny cute isometric house cross-section in a cutaway box, roof removed, showing all rooms inside.",
+    "Soft smooth lighting, soft warm colors, 100mm lens, 3d blender render, physically based rendering.",
+    "Isometric perspective at 30-45 degree angle from above. Miniature architectural diorama style.",
+    "",
+    "The house contains these rooms arranged as a single-story floor plan:",
+    ...roomDescLines,
+    "",
+    spatialLayout,
+    "",
+    "RENDERING REQUIREMENTS:",
+    "- All walls must be visible with 3D HEIGHT and THICKNESS (like a dollhouse cutaway)",
+    "- All furniture must be miniature 3D objects with realistic volume (tiny beds, sofas, tables, chairs, kitchen counters, toilets, sinks)",
+    "- Floor textures visible (wood planks, ceramic tiles) with 3D perspective",
+    "- Exterior around the house: green grass lawn, small trees, driveway with miniature cars, garden plants",
+    "- Soft directional lighting casting gentle shadows from walls and furniture",
+    "- Clean solid background (light cream or soft blue gradient)",
+    "",
+    style ? `Interior design style: ${style}.` : "Interior design style: modern minimalist, neutral tones.",
+    "",
+    "STRICT RULES:",
+    "- This is a 3D RENDER, NOT a 2D floor plan. Walls must have height. Furniture must have volume.",
+    "- NO text labels, NO dimension lines, NO annotations, NO watermarks",
+    "- NO flat top-down orthographic view. The camera MUST be at an angle showing wall heights.",
+    "- Think of it as a tiny architectural model (maquete) photographed at an angle.",
+    "",
+    prompt
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function build3DPromptFromExtraction({
   prompt,
   label,
@@ -746,6 +861,11 @@ function build3DPromptFromExtraction({
   consistencyLock,
   renderKind
 }) {
+  // For total-exterior (isometric cutaway), use a lean dedicated prompt
+  if (renderKind === "total-exterior") {
+    return buildLeanIsometricPrompt({ prompt, extractedPlanData, roomProgramText });
+  }
+
   const extractedJson = JSON.stringify(extractedPlanData, null, 2);
   const consistencyLockJson = consistencyLock
     ? JSON.stringify(consistencyLock, null, 2)
@@ -917,21 +1037,11 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
     prompt: String(room.prompt || "").trim()
   }));
 
-  // Fetch 3D style example image (for isometric reference)
-  let styleExampleDataUrl = String(req.body.styleExampleImageDataUrl || "").trim() || null;
-  if (!styleExampleDataUrl && totalPrompt) {
-    try {
-      styleExampleDataUrl = await fetchImageAsDataUrl(DEFAULT_3D_STYLE_EXAMPLE_URL);
-      console.log("[render-3d-package] Style example fetched successfully");
-    } catch (styleErr) {
-      console.warn("[render-3d-package] Could not fetch style example:", styleErr.message);
-    }
-  }
-
-  const totalReferenceImages = [...additionalReferenceImageDataUrls];
-  if (styleExampleDataUrl) {
-    totalReferenceImages.push(styleExampleDataUrl);
-  }
+  // For the isometric cutaway render:
+  // - Send the 2D floor plan as layout reference (room positions, walls, proportions)
+  // - The 3D style is enforced by strong "isometric 3d blender render" keywords in the prompt
+  // - referenceInstruction explicitly tells model to use image for LAYOUT ONLY, not style
+  // - High temperature (0.9) encourages creative 3D transformation
 
   const total = totalPrompt
     ? await renderPromptWithFallback(
@@ -947,25 +1057,15 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
         "Volume total da casa",
         {
           referenceImageDataUrl: referencePlanImageDataUrl || undefined,
-          referenceImageDataUrls: totalReferenceImages,
+          referenceImageDataUrls: [],
           generationConfig: buildGenerationConfigByRenderKind("total-exterior"),
-          referenceInstruction: styleExampleDataUrl
-            ? [
-                "You are receiving TWO reference images:",
-                "IMAGE 1 (floor plan): Use ONLY for room layout — wall positions, doors, windows, room sizes.",
-                "IMAGE 2 (3D style example): Generate the output in THIS EXACT 3D VISUAL STYLE — isometric cutaway architectural model with walls showing height, 3D furniture with volume, perspective depth.",
-                "Combine: LAYOUT from image 1 + VISUAL STYLE from image 2.",
-                "The output must look like a physical architectural scale model (maquete) photographed from above at an angle.",
-                "NEVER generate a flat 2D floor plan or top-down orthographic view.",
-                ...strict3DRules
-              ].join("\n")
-            : [
-                "The attached image is the 2D FLOOR PLAN — use as LAYOUT REFERENCE ONLY (room positions, walls, doors).",
-                "Generate a 3D ARCHITECTURAL SCALE MODEL (maquete) photographed at a 30-45 degree angle.",
-                "The output MUST show walls with HEIGHT, furniture with VOLUME, and PERSPECTIVE depth.",
-                "NEVER generate a flat 2D floor plan or top-down orthographic view.",
-                ...strict3DRules
-              ].join("\n")
+          promptBeforeImage: true,
+          referenceInstruction: [
+            "The image below is a 2D FLOOR PLAN used ONLY as a LAYOUT GUIDE.",
+            "Copy the EXACT room positions, wall placement, sizes, proportions, doors, and windows from it.",
+            "DO NOT copy the visual style. DO NOT generate a flat 2D floor plan.",
+            "The OUTPUT STYLE is already defined above in the text prompt (3D isometric cutaway)."
+          ].join("\n")
         }
       )
     : { ok: true, skipped: true, result: null };
@@ -1108,15 +1208,33 @@ app.post("/api/plan/render-3d-item", async (req, res) => {
     renderKind
   });
 
+  // For total-exterior (isometric), send 2D plan for layout but use text-only 3D style instructions.
+  // Do NOT send style example images — the model copies them verbatim.
+  let itemReferenceImageDataUrl = referencePlanImageDataUrl || undefined;
+  let itemReferenceImageDataUrls = additionalReferenceImageDataUrls;
+  let itemReferenceInstruction = [
+    "A imagem anexada e a planta 2D oficial do projeto.",
+    "Use essa planta apenas como apoio visual para os dados estruturados extraidos.",
+    ...strict3DRules
+  ].join("\n");
+
+  if (renderKind === "total-exterior") {
+    // Send 2D plan for layout accuracy; prompt goes BEFORE image to establish 3D style first
+    itemReferenceImageDataUrls = [];
+    itemReferenceInstruction = [
+      "The image below is a 2D FLOOR PLAN used ONLY as a LAYOUT GUIDE.",
+      "Copy the EXACT room positions, wall placement, sizes, proportions, doors, and windows from it.",
+      "DO NOT copy the visual style. DO NOT generate a flat 2D floor plan.",
+      "The OUTPUT STYLE is already defined above in the text prompt (3D isometric cutaway)."
+    ].join("\n");
+  }
+
   const renderResult = await renderPromptWithFallback(enhancedPrompt, label, {
-    referenceImageDataUrl: referencePlanImageDataUrl || undefined,
-    referenceImageDataUrls: additionalReferenceImageDataUrls,
+    referenceImageDataUrl: itemReferenceImageDataUrl,
+    referenceImageDataUrls: itemReferenceImageDataUrls,
     generationConfig: buildGenerationConfigByRenderKind(renderKind),
-    referenceInstruction: [
-      "A imagem anexada e a planta 2D oficial do projeto.",
-      "Use essa planta apenas como apoio visual para os dados estruturados extraidos.",
-      ...strict3DRules
-    ].join("\n")
+    referenceInstruction: itemReferenceInstruction,
+    promptBeforeImage: renderKind === "total-exterior"
   });
 
   if (!renderResult.ok) {

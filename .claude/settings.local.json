@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:i.pinimg.com)",
+      "WebFetch(domain:stockcake.com)",
+      "WebFetch(domain:www.pinterest.com)",
+      "Bash(curl -sL -o isometric-cutaway-1.jpg \"https://i.pinimg.com/originals/8e/1e/6e/8e1e6e1d5c1a6c5e5e1b6f7a3c8d9e2f.jpg\")",
+      "Bash(curl -sL -o isometric-cutaway-2.jpg \"https://i.pinimg.com/736x/4f/4d/73/4f4d738d8b8d3e5d3e3e2e1e0e0e0e0e.jpg\")",
+      "WebFetch(domain:www.freepik.com)",
+      "Bash(rm -f isometric-cutaway-1.jpg isometric-cutaway-2.jpg)",
+      "Bash(curl -sL -o test1.jpg \"https://images.unsplash.com/photo-1721738901083-8d3bcaa43885?w=800\")",
+      "Bash(node --check src/server.js)",
+      "Bash(node --check src/planEngine.js)",
+      "Bash(timeout 5 node -e \":*)",
+      "Bash(node --check src/googleClient.js)"
+    ]
+  }
+}
