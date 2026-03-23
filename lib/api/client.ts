@@ -1,8 +1,4 @@
-// Use backend directly to avoid Next.js rewrite proxy timeout on long requests
-const API_BASE =
-  typeof window !== "undefined"
-    ? `${window.location.protocol}//${window.location.hostname}:3001/api`
-    : "http://localhost:3001/api";
+const API_BASE = "/api";
 
 interface ApiError {
   status: number;
