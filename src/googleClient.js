@@ -16,6 +16,11 @@ function parseRetryDelayToSeconds(retryDelay) {
 function extractCandidateOutput(data) {
   const firstCandidate = data.candidates?.[0];
   const parts = firstCandidate?.content?.parts || [];
+  const finishReason = firstCandidate?.finishReason;
+
+  if (finishReason && finishReason !== "STOP") {
+    console.warn(`[extractCandidateOutput] finishReason: ${finishReason} (response may be truncated)`);
+  }
 
   const imagePart = parts.find(
     (part) => part.inlineData && part.inlineData.mimeType?.startsWith("image/")
@@ -214,16 +219,41 @@ async function callGenerateContent(model, apiKey, promptText, options = {}) {
     }
   };
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(payload)
-  });
+  const payloadJson = JSON.stringify(payload);
+  const timeoutMs = options.timeoutMs || 90000;
+  console.log(`[callGenerateContent] Model: ${model} | Payload size: ${(payloadJson.length / 1024).toFixed(1)}KB | Parts: ${parts.length} | Timeout: ${timeoutMs}ms`);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: payloadJson,
+      signal: controller.signal
+    });
+  } catch (fetchError) {
+    clearTimeout(timer);
+    if (fetchError.name === "AbortError") {
+      console.error(`[callGenerateContent] TIMEOUT apos ${timeoutMs}ms para model ${model}`);
+      const err = new Error(`Timeout: Gemini (${model}) nao respondeu em ${Math.round(timeoutMs / 1000)}s.`);
+      err.status = 408;
+      throw err;
+    }
+    console.error(`[callGenerateContent] Fetch error:`, fetchError.message);
+    throw fetchError;
+  }
+  clearTimeout(timer);
+
+  console.log(`[callGenerateContent] Response status: ${response.status}`);
 
   if (!response.ok) {
     const errorBody = await response.text();
+    console.error(`[callGenerateContent] API Error: ${response.status}`, errorBody.slice(0, 500));
     throw createGoogleApiError(response.status, errorBody);
   }
 
@@ -356,6 +386,7 @@ async function attemptExtractJsonWithModel({
     ].join(" "),
     generationConfig: {
       temperature: 0.1,
+      maxOutputTokens: 8192,
       responseMimeType: "application/json"
     }
   });
@@ -379,6 +410,7 @@ async function attemptExtractJsonWithModel({
       expectImage: false,
       generationConfig: {
         temperature: 0,
+        maxOutputTokens: 8192,
         responseMimeType: "application/json"
       }
     });
@@ -745,11 +777,20 @@ async function extractPlanDataFrom2D(options = {}) {
   const roomProgram = Array.isArray(options.roomProgram) ? options.roomProgram : [];
   const plan2DPrompt = String(options.plan2DPrompt || "").trim();
 
+  console.log("[extractPlanDataFrom2D] Iniciando extracao");
+  console.log("[extractPlanDataFrom2D] Model:", model, "| Fallback:", fallbackModel);
+  console.log("[extractPlanDataFrom2D] Image URL length:", referenceImageDataUrl.length);
+  console.log("[extractPlanDataFrom2D] Room program:", roomProgram);
+  console.log("[extractPlanDataFrom2D] API key present:", !!apiKey);
+
   if (!apiKey) {
     throw new Error("GOOGLE_API_KEY nao configurada. Defina no arquivo .env");
   }
 
-  if (!parseDataUrl(referenceImageDataUrl)) {
+  const parsedImage = parseDataUrl(referenceImageDataUrl);
+  console.log("[extractPlanDataFrom2D] Parsed image:", parsedImage ? `${parsedImage.mimeType} (${parsedImage.data.length} chars)` : "FALHOU");
+
+  if (!parsedImage) {
     throw new Error("Imagem 2D de referencia invalida para extracao.");
   }
 

@@ -23,7 +23,8 @@ const terrainFormSchema = z.object({
   backNeighbor: z.string().trim().min(1, "Selecione o vizinho dos fundos."),
   hasWater: z.coerce.boolean(),
   hasSewer: z.coerce.boolean(),
-  hasElectricity: z.coerce.boolean()
+  hasElectricity: z.coerce.boolean(),
+  architecturalStyle: z.string().trim().optional()
 });
 
 function calculateLotMetrics(data) {
@@ -94,6 +95,16 @@ function uniqueRooms(roomList) {
   return normalized;
 }
 
+function getStyleDescriptor(style) {
+  const descriptors = {
+    japandi: "Estilo Japandi: fusao de minimalismo japones com design escandinavo. Use madeira clara de carvalho, tons neutros (bege, cinza claro, branco), linhas limpas, moveis baixos, iluminacao suave e natural, plantas discretas, texturas organicas como linho e ceramica.",
+    moderno: "Estilo Moderno: design contemporaneo com linhas retas e geometricas. Use concreto aparente, vidro, aco escovado, tons de cinza com pontos de cor, iluminacao embutida, pe-direito alto, espacos abertos e integrados, moveis de design com formas limpas.",
+    minimalista: 'Estilo Minimalista: filosofia "menos e mais". Use paleta monocromatica (branco, off-white, cinza claro), moveis essenciais sem ornamentos, linhas puras, superficies lisas, iluminacao difusa, espacos amplos e livres, armazenamento embutido e oculto.',
+    rustico: "Estilo Rustico: integracao com a natureza. Use madeira robusta escura (peroba, ipe), pedra natural nas paredes, cores terrosas (marrom, verde musgo, terracota), vigas aparentes no teto, lareiras, plantas abundantes, tecidos naturais como algodao cru e juta, iluminacao quente e acolhedora."
+  };
+  return descriptors[(style || "").toLowerCase()] || "";
+}
+
 function buildContextText(data, lotMetrics) {
   return [
     "DADOS DO CLIENTE:",
@@ -156,6 +167,7 @@ function createGenerationPackage(inputData) {
   const mandatoryRoomsText = suggestedRooms.map((room) => `- ${room}`).join("\n");
   const contextText = buildContextText(data, lotMetrics);
   const renderContextText = buildRenderContextText(data, lotMetrics);
+  const styleText = getStyleDescriptor(data.architecturalStyle);
 
   const prompt2DTechnical = [
     "Voce e um arquiteto especializado em plantas tecnicas brasileiras.",
@@ -178,6 +190,7 @@ function createGenerationPackage(inputData) {
     "PROIBIDO inserir na imagem dados de cliente, documento, CEP, endereco, orcamento, objetivo, medidas em caixa de texto, topografia, solo, vizinhanca ou infraestrutura.",
     "Nao incluir nenhum texto fora dos nomes dos comodos.",
     "Mostrar sombras suaves e iluminacao natural para dar profundidade.",
+    styleText ? styleText : "",
     "Inclua obrigatoriamente TODOS os ambientes listados abaixo:",
     mandatoryRoomsText,
     "",
@@ -185,15 +198,32 @@ function createGenerationPackage(inputData) {
   ].join("\n");
 
   const prompt3DTotal = [
-    "Crie um modelo 3D completo da planta com volumetria, cobertura e materiais base.",
-    "Gerar vista isometrica geral, cortes simplificados e imagem externa da fachada principal.",
-    "Estilo realista, iluminacao natural diurna e escala humana.",
-    "Imagem LIMPA: sem texto, sem quadro lateral, sem tabela, sem carimbo, sem legenda e sem watermark.",
-    "SER FIEL E RIGOROSAMENTE IGUAL a planta 2D aprovada.",
-    "Nao adicionar, mover ou remover paredes.",
-    "Nao inventar portas e janelas em locais nao definidos na planta 2D.",
-    "Manter posicao, quantidade e proporcao de portas e janelas exatamente como na planta 2D.",
-    "O modelo 3D deve incluir obrigatoriamente todos os ambientes abaixo:",
+    "Generate a PHOTOREALISTIC 3D ARCHITECTURAL MODEL of this house as a CUTAWAY ISOMETRIC VIEW with the ROOF COMPLETELY REMOVED.",
+    "",
+    "CRITICAL — THIS MUST BE A TRUE 3D RENDER, NOT A 2D FLOOR PLAN:",
+    "- The camera MUST be at a 30-45 degree angle from above (isometric perspective), NOT directly overhead.",
+    "- All walls MUST have visible HEIGHT (2.8m to 3m tall) with THICKNESS, casting real shadows.",
+    "- All furniture and objects MUST be 3D models with volume, depth, and realistic proportions — NOT flat 2D icons or symbols.",
+    "- The floor planes of each room must show PERSPECTIVE DEPTH with vanishing points.",
+    "- External walls must show material texture (concrete, brick, plaster) with 3D depth.",
+    "- The result should look like a PHYSICAL ARCHITECTURAL SCALE MODEL (maquete) photographed from above at an angle.",
+    "",
+    "WHAT TO SHOW:",
+    "- Complete house structure with all rooms visible from above (roof removed).",
+    "- 3D furniture inside each room: beds, sofas, tables, chairs, kitchen counters — all with realistic 3D volume.",
+    "- Floor textures (wood, tile, marble) with perspective distortion.",
+    "- Exterior landscape: grass, trees, driveway, walkways in 3D.",
+    "- Natural daylight illumination from the side with soft shadows on walls and furniture.",
+    "",
+    "WHAT NOT TO DO:",
+    "- Do NOT generate a flat 2D floor plan or top-down orthographic view.",
+    "- Do NOT use flat colored rectangles for furniture — use 3D modeled objects.",
+    "- Do NOT add text labels, room names, dimensions, or any annotations.",
+    "- Do NOT add watermarks, borders, or side panels.",
+    "",
+    styleText ? `Architectural style: ${styleText}.` : "",
+    "The layout, room positions, wall placement, doors and windows must EXACTLY match the 2D reference floor plan provided.",
+    "Include all rooms listed below:",
     mandatoryRoomsText,
     "",
     renderContextText
@@ -202,15 +232,26 @@ function createGenerationPackage(inputData) {
   const roomPrompts = suggestedRooms.map((roomName) => ({
     room: roomName,
     prompt: [
-      `Crie um render 3D INTERNO detalhado do ambiente: ${roomName}.`,
-      `Ambientes obrigatorios do projeto (nao omitir no contexto global): ${suggestedRooms.join(", ")}.`,
-      "SER FIEL E RIGOROSAMENTE IGUAL a planta 2D aprovada.",
-      "NAO INVENTAR quartos/comodos fora do que existe na planta.",
-      "Nao inventar portas e janelas em locais nao definidos na planta 2D.",
-      "Manter compatibilidade com a planta geral, usando medidas reais do comodo extraidas da planta.",
-      "Render interno somente do ambiente foco, com camera dentro do comodo.",
-      "Nao renderizar fachada, cobertura externa ou vista aerea nesse render de comodo.",
-      "Imagem LIMPA: sem texto, sem quadro lateral, sem tabela, sem carimbo, sem legenda e sem watermark.",
+      `Generate a PHOTOREALISTIC 3D INTERIOR RENDER of the room: ${roomName}.`,
+      "",
+      "CRITICAL — THIS MUST BE A 3D INTERIOR PHOTOGRAPH, NOT A FLOOR PLAN:",
+      "- Camera position: INSIDE the room at human eye level (1.5-1.7m height), looking across the space.",
+      "- Show walls with full HEIGHT and real material textures (paint, tile, wood paneling).",
+      "- Show ceiling with lighting fixtures visible.",
+      "- Show floor with realistic textures (hardwood, tile, marble) in PERSPECTIVE.",
+      "- All furniture and objects must be 3D models with VOLUME and realistic proportions.",
+      "- Natural daylight illumination through windows, with soft shadows.",
+      "",
+      "WHAT NOT TO DO:",
+      "- Do NOT generate a top-down floor plan view or bird's eye view.",
+      "- Do NOT use flat 2D furniture symbols or icons.",
+      "- Do NOT show the room from above — the camera must be INSIDE the room.",
+      "- Do NOT render exterior views, roof, or aerial perspectives.",
+      "- Do NOT add text, labels, dimensions, watermarks, or annotations.",
+      "",
+      styleText ? `Architectural style: ${styleText}.` : "",
+      "Maintain the exact room layout, dimensions, doors, and windows from the reference floor plan.",
+      `Project rooms for context: ${suggestedRooms.join(", ")}.`,
       "",
       renderContextText
     ].join("\n")

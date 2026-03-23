@@ -1,0 +1,89 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Construlink Brand Tokens */
+  --primary: #1B2B4B;
+  --primary-light: #2A3F6B;
+  --primary-dark: #111D33;
+  --accent: #E8A838;
+  --accent-light: #F0C060;
+  --accent-dark: #CC8E20;
+  --surface: #F8F6F3;
+  --surface-alt: #F0EDE8;
+  --neutral: #64748B;
+  --neutral-light: #94A3B8;
+  --neutral-dark: #475569;
+  --success: #16A34A;
+  --error: #DC2626;
+  --warning: #F59E0B;
+
+  /* shadcn/ui compatible tokens */
+  --background: 40 33% 97%;
+  --foreground: 217 47% 20%;
+  --card: 0 0% 100%;
+  --card-foreground: 217 47% 20%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 217 47% 20%;
+  --primary-hsl: 217 47% 20%;
+  --primary-foreground: 40 33% 97%;
+  --secondary: 40 20% 92%;
+  --secondary-foreground: 217 47% 20%;
+  --muted: 40 15% 90%;
+  --muted-foreground: 215 16% 47%;
+  --accent-hsl: 37 78% 56%;
+  --accent-foreground: 217 47% 15%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 40 15% 87%;
+  --input: 40 15% 87%;
+  --ring: 217 47% 20%;
+  --radius: 0.75rem;
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary-hsl));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent-hsl));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Brand direct access */
+  --color-brand-primary: var(--primary);
+  --color-brand-accent: var(--accent);
+  --color-brand-surface: var(--surface);
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background-color: var(--surface);
+  color: var(--primary);
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "DM Sans", "Inter", system-ui, sans-serif;
+}

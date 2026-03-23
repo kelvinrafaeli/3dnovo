@@ -67,20 +67,33 @@ function resolveJsonBodyLimit(rawLimit) {
 const jsonBodyLimit = resolveJsonBodyLimit(process.env.JSON_BODY_LIMIT);
 
 const strict3DRules = [
-  "SER FIEL E RIGOROSAMENTE IGUAL a planta 2D anexada.",
-  "Nao adicionar, mover ou remover paredes.",
-  "Seguir sempre o prompt mestre da planta 2D e os dados extraidos como fonte principal.",
-  "Nao inventar quartos/comodos que nao existam na planta 2D.",
-  "Nao inventar portas e janelas em locais nao definidos na planta 2D.",
-  "Manter posicao, quantidade e proporcao de portas e janelas exatamente como na planta 2D.",
-  "Usar somente objetos, cores e materiais presentes no JSON extraido da imagem 2D.",
-  "Imagem final limpa: sem textos, sem quadro lateral, sem tabela, sem carimbo, sem legenda, sem watermark e sem bloco de metadados.",
-  "A imagem final deve mostrar somente visualizacao 3D. Nao exibir planta baixa 2D, cotas, blueprint ou sobreposicoes tecnicas.",
-  "Manter tipologia de cobertura, volumetria externa e logica da area externa iguais ao projeto base ja definido."
+  "LAYOUT FIDELITY: Match wall positions, door locations, and window placements exactly as shown in the reference floor plan.",
+  "Do NOT add, move, or remove walls from the reference layout.",
+  "Do NOT invent rooms, doors, or windows not present in the reference.",
+  "Use ONLY the objects, colors, and materials listed in the extracted JSON data.",
+  "CLEAN IMAGE: No text labels, no dimensions, no side panels, no tables, no stamps, no watermarks, no metadata blocks.",
+  "OUTPUT FORMAT: The final image must be a 3D VISUALIZATION ONLY. Never show 2D floor plans, blueprints, or technical overlays.",
+  "Maintain the roofing style, external volumetry, and outdoor area logic from the base project."
 ];
 
 app.use(express.json({ limit: jsonBodyLimit }));
-app.use(express.static(path.join(__dirname, "..", "public")));
+
+// CORS — allow Next.js dev server to call backend directly
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
+app.use(express.static(path.join(__dirname, "..", "public-legacy")));
+
+// Log all incoming API requests
+app.use("/api", (req, _res, next) => {
+  console.log(`[API] ${req.method} ${req.path} | Body size: ${JSON.stringify(req.body || {}).length} bytes`);
+  next();
+});
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "3dnovo-plan-service" });
@@ -633,34 +646,42 @@ function buildIntegratedRoomConsistencyBlock(roomData, allRooms) {
 function buildRenderKindRules(renderKind) {
   if (renderKind === "total-exterior") {
     return [
-      "TIPO DE RENDER: EXTERNO TOTAL.",
-      "Mostre a casa completa em vista externa, com volumetria geral e cobertura definida.",
-      "Defina esse render como imagem ancora para manter consistencia da fachada e area externa."
+      "RENDER TYPE: 3D ISOMETRIC CUTAWAY — ARCHITECTURAL SCALE MODEL (MAQUETE) WITH ROOF REMOVED.",
+      "Camera at 30-45 degree angle from above — NEVER directly overhead / top-down.",
+      "This MUST look like a PHYSICAL 3D ARCHITECTURAL MODEL photographed at an angle.",
+      "All walls MUST have visible HEIGHT (2.8-3m) with THICKNESS and material texture.",
+      "All furniture MUST be 3D objects with VOLUME and DEPTH — NOT flat 2D icons.",
+      "Floor surfaces must show PERSPECTIVE DISTORTION proving this is a 3D view.",
+      "NEVER generate a flat/2D floor plan. NEVER use flat colored shapes for furniture.",
+      "Roof and ceiling COMPLETELY REMOVED — all rooms visible from above.",
+      "Include exterior landscape (grass, trees, driveway) in 3D around the building.",
+      "Side lighting with shadows cast by walls and furniture to reinforce 3D depth."
     ];
   }
 
   if (renderKind === "facade-exterior") {
     return [
-      "TIPO DE RENDER: FACHADA EXTERNA.",
-      "A fachada deve manter a MESMA cobertura, volumetria e linguagem do render externo total ancora.",
-      "Nao alterar tipologia de telhado nem proporcao externa definida no projeto base."
+      "RENDER TYPE: EXTERIOR FACADE — 3D FRONT VIEW OF THE BUILDING.",
+      "Maintain the SAME roofing, volumetry, and visual language as the total exterior anchor render.",
+      "Do NOT alter roof typology or external proportions from the base project."
     ];
   }
 
   if (renderKind === "room-interior") {
     return [
-      "TIPO DE RENDER: INTERNO DE COMODO.",
-      "Renderizar APENAS ambiente interno do comodo alvo, com camera interna e escala humana.",
-      "Nao gerar vista externa da casa, nao mostrar fachada e nao mostrar planta baixa.",
-      "Respeitar rigorosamente dimensoes e aberturas do comodo alvo extraidas da planta 2D.",
-      "Se houver imagens internas de referencia anexadas, manter exatamente a mesma posicao de portas, janelas e conexao com ambientes adjacentes.",
-      "Quando houver conceito aberto com outro ambiente, o ambiente nao foco deve aparecer desfocado/neutralizado para evitar divergencia entre renders."
+      "RENDER TYPE: 3D INTERIOR PHOTOGRAPH — CAMERA INSIDE THE ROOM.",
+      "Camera MUST be positioned INSIDE the room at human eye level (1.5-1.7m height).",
+      "Show the room as a real interior photo: walls with height, ceiling visible, floor in perspective.",
+      "NEVER show a top-down view, floor plan, or bird's eye perspective.",
+      "Respect exact room dimensions, door/window positions from the reference layout.",
+      "If reference images are attached, maintain exact door/window positions and connections to adjacent rooms.",
+      "For open-concept spaces, adjacent rooms should appear blurred/neutral to avoid inconsistency."
     ];
   }
 
   return [
-    "TIPO DE RENDER: GENERICO CONTROLADO.",
-    "Manter fidelidade total aos dados extraidos da planta 2D e ao lock de consistencia."
+    "RENDER TYPE: CONTROLLED 3D VISUALIZATION.",
+    "Maintain full fidelity to extracted layout data and consistency lock."
   ];
 }
 
@@ -683,8 +704,8 @@ function buildGenerationConfigByRenderKind(renderKind) {
 
   if (renderKind === "total-exterior") {
     return {
-      temperature: 0.12,
-      topP: 0.6,
+      temperature: 0.05,
+      topP: 0.4,
       maxOutputTokens: 4096
     };
   }
@@ -726,57 +747,68 @@ function build3DPromptFromExtraction({
   const visualObjectsBlock = buildVisualObjectsBlock(extractedPlanData, label, renderKind);
 
   return [
-    "GERAR 3D OBRIGATORIAMENTE COM BASE NOS DADOS EXTRAIDOS DA PLANTA 2D.",
-    visualSignature ? `ASSINATURA VISUAL OBRIGATORIA DO PROJETO: ${visualSignature}` : "",
-    `Ambiente foco desta imagem: ${label}`,
-    ...renderKindRules,
-    ...strict3DRules,
-    "Nao inventar comodos fora do programa e nao remover comodos existentes.",
-    "Programa de ambientes do projeto:",
-    roomProgramText,
+    // ===== 1. TASK DIRECTIVE (FIRST — strongest signal) =====
+    "=== 3D RENDER TASK ===",
+    prompt,
     "",
-    "BASE VISUAL EXTRAIDA (OBRIGATORIA):",
+    // ===== 2. OUTPUT FORMAT RULES =====
+    ...renderKindRules,
+    "",
+    // ===== 3. ANTI-2D GUARD (always present) =====
+    "CRITICAL OUTPUT RULE: The output MUST be a 3D rendered image with depth, perspective and volume.",
+    "NEVER output a flat 2D floor plan, blueprint, or top-down orthographic view.",
+    "All furniture must be 3D objects with volume — NOT flat 2D symbols or icons.",
+    "",
+    // ===== 4. LAYOUT FIDELITY RULES =====
+    ...strict3DRules,
+    "",
+    // ===== 5. REFERENCE DATA (context for accuracy) =====
+    `Target environment: ${label}`,
+    visualSignature ? `Visual signature: ${visualSignature}` : "",
+    "",
+    "REFERENCE DATA (extracted from the floor plan — use for layout accuracy only, NOT as output style):",
     visualSummaryBlock,
     "",
-    "OBJETOS EXTRAIDOS DA IMAGEM 2D (OBRIGATORIO):",
+    "Objects to include (from extraction):",
     visualObjectsBlock,
-    "REGRA ANTI-ALUCINACAO: use somente os objetos, cores e materiais listados no JSON extraido. Se faltar dado, mantenha visual neutro e nao invente.",
-    includeRoomMetrics ? "" : "",
-    includeRoomMetrics ? "CONTRATO DE CONSISTENCIA DO COMODO (OBRIGATORIO):" : "",
-    includeRoomMetrics
-      ? "As quantidades e posicoes de portas/janelas deste comodo devem permanecer identicas em todos os renders relacionados."
-      : "",
-    includeRoomMetrics ? "DADOS DO COMODO ALVO (EXTRAIDOS DA PLANTA 2D):" : "",
+    "Anti-hallucination: use ONLY objects, colors and materials from the extracted data. If data is missing, keep neutral visuals.",
+    "",
+    // ===== 6. ROOM-SPECIFIC DATA (interior renders only) =====
+    includeRoomMetrics ? "ROOM CONSISTENCY CONTRACT:" : "",
+    includeRoomMetrics ? "Door/window count and positions must remain identical across all related renders." : "",
+    includeRoomMetrics ? "Room dimensions and metrics:" : "",
     includeRoomMetrics ? roomMetricsBlock : "",
     includeRoomMetrics ? "" : "",
-    includeRoomMetrics
-      ? "DADOS DOS AMBIENTES ADJACENTES (PARA FUNDO/TRANSICAO COERENTE):"
-      : "",
+    includeRoomMetrics ? "Adjacent rooms (for background/transition coherence):" : "",
     includeRoomMetrics ? adjacentRoomsBlock : "",
     includeRoomMetrics ? "" : "",
     includeRoomMetrics ? integratedRoomConsistencyBlock : "",
     "",
-    "Restricoes extras extraidas da planta 2D:",
+    // ===== 7. STRUCTURAL DATA (JSON — compact) =====
+    "Extracted layout constraints:",
     extractedStrictConstraints,
     "",
-    consistencyLockJson ? "LOCK DE CONSISTENCIA ENTRE IMAGENS (OBRIGATORIO):" : "",
+    consistencyLockJson ? "Consistency lock:" : "",
     consistencyLockJson || "",
-    consistencyLockJson ? "" : "",
-    "DADOS ESTRUTURADOS EXTRAIDOS DA PLANTA 2D (BASE OFICIAL):",
-    extractedJson,
     "",
-    referencePlanPrompt
-      ? `PROMPT MESTRE DA PLANTA 2D (NUNCA CONTRADIZER):\n${referencePlanPrompt}`
-      : "",
+    "Room program:",
+    roomProgramText,
     "",
-    "Tarefa de renderizacao 3D:",
-    prompt
+    "Structural JSON data (for reference only — do NOT let this influence output format):",
+    extractedJson
   ]
     .filter(Boolean)
     .join("\n");
 }
 
 app.post("/api/plan/extract-2d-data", async (req, res) => {
+  console.log("[extract-2d-data] Request recebido");
+  console.log("[extract-2d-data] Body keys:", Object.keys(req.body || {}));
+  console.log("[extract-2d-data] referencePlanImageDataUrl presente:", !!req.body.referencePlanImageDataUrl);
+  console.log("[extract-2d-data] referencePlanImageDataUrl tamanho:", String(req.body.referencePlanImageDataUrl || "").length);
+  console.log("[extract-2d-data] plan2DPrompt tamanho:", String(req.body.plan2DPrompt || "").length);
+  console.log("[extract-2d-data] roomProgram:", req.body.roomProgram);
+
   try {
     const referencePlanImageDataUrl = String(req.body.referencePlanImageDataUrl || "").trim();
     const plan2DPrompt = String(req.body.plan2DPrompt || "").trim();
@@ -785,22 +817,28 @@ app.post("/api/plan/extract-2d-data", async (req, res) => {
       : [];
 
     if (!referencePlanImageDataUrl) {
+      console.log("[extract-2d-data] ERRO: imagem vazia");
       return res.status(400).json({
         error: "Imagem da planta 2D obrigatoria para extracao de dados."
       });
     }
 
+    console.log("[extract-2d-data] Chamando extractPlanDataFrom2D...");
     const extraction = await extractPlanDataFrom2D({
       referenceImageDataUrl: referencePlanImageDataUrl,
       roomProgram,
       plan2DPrompt
     });
 
+    console.log("[extract-2d-data] Extracao concluida com sucesso. Model:", extraction.model);
     return res.json({
       ok: true,
       extraction
     });
   } catch (error) {
+    console.error("[extract-2d-data] ERRO na extracao:", error?.message || error);
+    console.error("[extract-2d-data] Stack:", error?.stack);
+    console.error("[extract-2d-data] Status:", error?.status, "| quotaExceeded:", error?.quotaExceeded);
     const statusCode = Number.isInteger(error?.status) ? 502 : 500;
     return res.status(statusCode).json({
       error: error.message || "Falha ao extrair dados da planta 2D."
@@ -809,6 +847,8 @@ app.post("/api/plan/extract-2d-data", async (req, res) => {
 });
 
 app.post("/api/plan/render-3d-package", async (req, res) => {
+  console.log("[render-3d-package] Request recebido");
+  try {
   const totalPrompt = String(req.body.totalPrompt || "").trim();
   const facadePrompt = String(req.body.facadePrompt || "").trim();
   const referencePlanImageDataUrl = String(req.body.referencePlanImageDataUrl || "").trim();
@@ -826,10 +866,7 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
   const maxRooms = Number.isFinite(maxRoomsInput)
     ? Math.max(1, Math.min(12, Math.floor(maxRoomsInput)))
     : 6;
-
-  if (!totalPrompt) {
-    return res.status(400).json({ error: "Prompt 3D total obrigatorio." });
-  }
+  console.log("[render-3d-package] totalPrompt:", !!totalPrompt, "| facadePrompt:", !!facadePrompt, "| maxRooms:", maxRooms, "| roomPrompts:", roomPrompts.length);
 
   if (!extractedPlanData) {
     return res.status(400).json({
@@ -848,7 +885,7 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
     roomProgramForPrompt
   );
 
-  if (resolvedRoomPrompts.length === 0) {
+  if (resolvedRoomPrompts.length === 0 && !totalPrompt && !facadePrompt) {
     return res.status(400).json({
       error:
         "Nao foi possivel identificar comodos para renderizacao 3D. Verifique se a extracao JSON retornou rooms_detected/objects/rooms."
@@ -860,28 +897,33 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
     prompt: String(room.prompt || "").trim()
   }));
 
-  const total = await renderPromptWithFallback(
-    build3DPromptFromExtraction({
-      prompt: totalPrompt,
-      label: "Volume total da casa",
-      referencePlanPrompt,
-      roomProgramText,
-      extractedPlanData,
-      consistencyLock,
-      renderKind: "total-exterior"
-    }),
-    "Volume total da casa",
-    {
-      referenceImageDataUrl: referencePlanImageDataUrl || undefined,
-      referenceImageDataUrls: additionalReferenceImageDataUrls,
-      generationConfig: buildGenerationConfigByRenderKind("total-exterior"),
-      referenceInstruction: [
-        "A imagem anexada e a planta 2D oficial do projeto.",
-        "Use essa planta apenas como apoio visual para os dados estruturados extraidos.",
-        ...strict3DRules
-      ].join("\n")
-    }
-  );
+  const total = totalPrompt
+    ? await renderPromptWithFallback(
+        build3DPromptFromExtraction({
+          prompt: totalPrompt,
+          label: "Volume total da casa",
+          referencePlanPrompt,
+          roomProgramText,
+          extractedPlanData,
+          consistencyLock,
+          renderKind: "total-exterior"
+        }),
+        "Volume total da casa",
+        {
+          referenceImageDataUrl: referencePlanImageDataUrl || undefined,
+          referenceImageDataUrls: additionalReferenceImageDataUrls,
+          generationConfig: buildGenerationConfigByRenderKind("total-exterior"),
+          referenceInstruction: [
+            "The attached image is the 2D FLOOR PLAN — use as LAYOUT REFERENCE ONLY (room positions, walls, doors).",
+            "Generate a 3D ARCHITECTURAL SCALE MODEL (maquete) photographed at a 30-45 degree angle.",
+            "The output MUST show walls with HEIGHT, furniture with VOLUME, and PERSPECTIVE depth.",
+            "NEVER generate a flat 2D floor plan or top-down orthographic view.",
+            ...strict3DRules
+          ].join("\n")
+        }
+      )
+    : { ok: true, skipped: true, result: null };
+  console.log("[render-3d-package] Total render ok:", total.ok, "| skipped:", !!total.skipped);
   const facade = facadePrompt
     ? await renderPromptWithFallback(
         build3DPromptFromExtraction({
@@ -913,6 +955,7 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
           imageDataUrl: null
         }
       };
+  console.log("[render-3d-package] Facade ok:", facade.ok, "| skipped:", !!facade.skipped);
 
   const rooms = [];
 
@@ -942,16 +985,20 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
         referenceImageDataUrls: additionalReferenceImageDataUrls,
         generationConfig: buildGenerationConfigByRenderKind("room-interior"),
         referenceInstruction: [
-          "A imagem anexada e a planta 2D oficial do projeto.",
-          "Use essa planta apenas como apoio visual para os dados estruturados extraidos.",
+          "The attached image is the 2D FLOOR PLAN — use as LAYOUT REFERENCE ONLY.",
+          "Generate a 3D INTERIOR photograph from INSIDE the room, NOT a floor plan view.",
+          "Camera must be at human eye level inside the room. Walls must have height. Furniture must have 3D volume.",
+          "NEVER generate a top-down view, blueprint, or flat floor plan.",
           ...strict3DRules
         ].join("\n")
       }
     );
     rooms.push({ room: room.room, ...roomRender });
+    console.log(`[render-3d-package] Room "${room.room}" ok:`, roomRender.ok);
   }
 
   const hasErrors = !total.ok || !facade.ok || rooms.some((item) => !item.ok);
+  console.log("[render-3d-package] Concluido. hasErrors:", hasErrors, "| rooms:", rooms.length);
 
   res.json({
     ok: !hasErrors,
@@ -966,6 +1013,11 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
       rooms
     }
   });
+  } catch (error) {
+    console.error("[render-3d-package] ERRO:", error?.message || error);
+    console.error("[render-3d-package] Stack:", error?.stack);
+    res.status(500).json({ error: error?.message || "Falha ao gerar pacote 3D." });
+  }
 });
 
 app.post("/api/plan/render-3d-item", async (req, res) => {
@@ -1054,6 +1106,14 @@ app.use((error, _req, res, next) => {
   return res.status(statusCode).json({
     error: error.message || "Erro interno no servidor."
   });
+});
+
+// Prevent unhandled errors from crashing the server
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] Uncaught Exception:", err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[FATAL] Unhandled Rejection:", reason);
 });
 
 app.listen(port, () => {

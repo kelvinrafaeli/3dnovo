@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 40" fill="none">
+  <!-- Icon -->
+  <rect x="0" y="4" width="32" height="32" rx="6" fill="#1B2B4B"/>
+  <path d="M6 28V16l5-4 5 4v12H6z" stroke="#E8A838" stroke-width="1.8" fill="none"/>
+  <path d="M16 28V19l5-4 5 4v9H16z" stroke="#E8A838" stroke-width="1.8" fill="none"/>
+  <rect x="9" y="20" width="4" height="4" rx="0.5" fill="#E8A838" opacity="0.6"/>
+  <rect x="19" y="21" width="4" height="3.5" rx="0.5" fill="#E8A838" opacity="0.6"/>
+  <line x1="14" y1="16" x2="18" y2="16" stroke="#E8A838" stroke-width="1.2" stroke-linecap="round" opacity="0.4"/>
+  <!-- Text -->
+  <text x="40" y="27" font-family="DM Sans, Inter, system-ui, sans-serif" font-size="20" font-weight="700" fill="#1B2B4B">Constru<tspan fill="#E8A838">link</tspan></text>
+</svg>
