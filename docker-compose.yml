@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile.frontend
       args:
         BACKEND_URL: http://construlink-backend:3001
+        NEXT_PUBLIC_MAPBOX_TOKEN: ${NEXT_PUBLIC_MAPBOX_TOKEN}
     container_name: construlink-frontend
     restart: unless-stopped
     environment:
