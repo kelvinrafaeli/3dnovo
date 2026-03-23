@@ -1,7 +1,6 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { MapPin } from "lucide-react";
 import type { RenderResult } from "@/context/ProjectContext";
 
@@ -20,9 +19,6 @@ export function Plan2DPreview({ result }: Plan2DPreviewProps) {
             <MapPin className="h-4 w-4 text-[var(--accent)]" />
             Planta 2D Humanizada
           </CardTitle>
-          <Badge variant={result.usedFallback ? "secondary" : "accent"}>
-            {result.usedFallback ? "Fallback SVG" : result.model}
-          </Badge>
         </div>
       </CardHeader>
       <CardContent>

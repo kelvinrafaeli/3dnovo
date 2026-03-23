@@ -1,3 +1,9 @@
 portalconstrulink.chedlabs.com {
-	reverse_proxy construlink-frontend:3000
+	handle /api/* {
+		reverse_proxy construlink-backend:3001
+	}
+
+	handle {
+		reverse_proxy construlink-frontend:3000
+	}
 }

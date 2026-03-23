@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Search, MapPin, Ruler, Mountain, Droplets } from "lucide-react";
+import { useState, useMemo, lazy, Suspense } from "react";
+import { Search, MapPin, Ruler, Mountain, Droplets, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,10 @@ import { cn } from "@/lib/utils";
 import { useCepLookup } from "@/hooks/useCepLookup";
 import { stepTerrainSchema } from "@/lib/validation";
 import type { WizardFormData } from "@/lib/validation";
+
+const TerrainMap = lazy(() =>
+  import("@/components/terrain/TerrainMap").then((m) => ({ default: m.TerrainMap }))
+);
 
 /* ---------- Types ---------- */
 
@@ -643,6 +647,25 @@ export function StepTerrain({
           />
         </div>
       </section>
+
+      {/* ═══════════ Section: Mapa 3D do Terreno ═══════════ */}
+      {formData.cep && (formData.frontMeters || formData.backMeters) && (
+        <Suspense
+          fallback={
+            <div className="flex h-40 items-center justify-center rounded-xl bg-[var(--primary)]/5">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            </div>
+          }
+        >
+          <TerrainMap
+            cep={String(formData.cep ?? "")}
+            frontMeters={Number(formData.frontMeters) || 0}
+            backMeters={Number(formData.backMeters) || 0}
+            leftMeters={Number(formData.leftMeters) || 0}
+            rightMeters={Number(formData.rightMeters) || 0}
+          />
+        </Suspense>
+      )}
 
       {/* ── Actions ── */}
       <div className="flex justify-between pt-2">

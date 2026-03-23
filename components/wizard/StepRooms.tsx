@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { stepRoomsSchema, type WizardFormData } from "@/lib/validation";
 import { ROOM_CATALOG, type RoomDefinition } from "@/lib/room-definitions";
 import { useRoomSuggestions } from "@/hooks/useRoomSuggestions";
-import { Sparkles, Plus, Minus, Check, ArrowLeft } from "lucide-react";
+import { Sparkles, Plus, Minus, Check, ArrowLeft, ArrowRight } from "lucide-react";
 
 interface StepRoomsProps {
   formData: Partial<WizardFormData>;
@@ -311,8 +311,8 @@ export function StepRooms({
           onClick={handleValidateAndSubmit}
           className="gap-2 px-8"
         >
-          <Sparkles className="size-5" />
-          Gerar Meu Projeto
+          Continuar
+          <ArrowRight className="size-4" />
         </Button>
       </div>
     </div>

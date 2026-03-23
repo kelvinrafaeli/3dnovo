@@ -235,36 +235,29 @@ export function ResultsGallery() {
 
       {/* Tab Content */}
       {activeTab === "overview" && (
-        <div className="space-y-8">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {plan2DResult && <Plan2DPreview result={plan2DResult} />}
 
-          {/* 3D Top-Down View */}
+          {/* 3D Isometric View */}
           {plan3DResults?.total && (
             <Card className="overflow-hidden">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Box className="h-4 w-4 text-[var(--accent)]" />
-                    Vista 3D Isometrica (sem telhado)
+                    Planta 3D
                   </CardTitle>
-                  <Badge
-                    variant={plan3DResults.total.usedFallback ? "secondary" : "accent"}
-                  >
-                    {plan3DResults.total.usedFallback
-                      ? "Fallback SVG"
-                      : plan3DResults.total.model}
-                  </Badge>
                 </div>
               </CardHeader>
               <CardContent>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={plan3DResults.total.imageDataUrl}
-                  alt="Vista 3D Isometrica sem telhado"
+                  alt="Planta 3D"
                   className="w-full cursor-pointer rounded-lg border border-border/40 transition-transform hover:scale-[1.01]"
                   onClick={() =>
                     setDetail({
-                      title: "Vista 3D Isometrica (sem telhado)",
+                      title: "Planta 3D",
                       imageDataUrl: plan3DResults.total!.imageDataUrl,
                       model: plan3DResults.total!.model,
                       usedFallback: plan3DResults.total!.usedFallback,

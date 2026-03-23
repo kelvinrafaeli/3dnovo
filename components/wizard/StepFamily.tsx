@@ -25,6 +25,12 @@ import {
   UsersRound,
   Home,
   Building,
+  Briefcase,
+  UserCheck,
+  Dumbbell,
+  Laptop,
+  Flower2,
+  MessageSquare,
 } from "lucide-react";
 
 interface StepFamilyProps {
@@ -69,6 +75,8 @@ const LIFESTYLE_TOGGLES = [
     icon: Accessibility,
   },
   { key: "expandFamily" as const, label: "Familia em Expansao", icon: Baby },
+  { key: "hasHomeOffice" as const, label: "Home Office", icon: Briefcase },
+  { key: "hasElderly" as const, label: "Idosos na Casa", icon: UserCheck },
 ] as const;
 
 const HABIT_TOGGLES = [
@@ -81,6 +89,21 @@ const HABIT_TOGGLES = [
     key: "cookingImportance" as const,
     label: "Cozinha e Importante",
     icon: ChefHat,
+  },
+  {
+    key: "exercisesAtHome" as const,
+    label: "Exercicios em Casa",
+    icon: Dumbbell,
+  },
+  {
+    key: "worksFromHome" as const,
+    label: "Trabalha de Casa",
+    icon: Laptop,
+  },
+  {
+    key: "likesGardening" as const,
+    label: "Gosta de Jardinagem",
+    icon: Flower2,
   },
 ] as const;
 
@@ -100,6 +123,12 @@ export function StepFamily({
   onBack,
 }: StepFamilyProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showOtherNeeds, setShowOtherNeeds] = useState(
+    !!(formData as Record<string, unknown>).otherNeeds
+  );
+  const [showOtherHabits, setShowOtherHabits] = useState(
+    !!(formData as Record<string, unknown>).otherHabits
+  );
 
   const residentsCount = formData.residentsCount ?? 2;
   const familyComposition = formData.familyComposition ?? "";
@@ -247,7 +276,7 @@ export function StepFamily({
         </div>
       </div>
 
-      {/* Lifestyle Toggles */}
+      {/* Lifestyle Toggles — Necessidades Especiais */}
       <div className="space-y-3">
         <label className="font-[family-name:var(--font-dm-sans)] text-sm font-semibold text-[var(--primary)]">
           Necessidades Especiais
@@ -262,7 +291,7 @@ export function StepFamily({
                 type="button"
                 onClick={() => handleToggle(item.key)}
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-200",
+                  "inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-200",
                   active
                     ? "bg-[var(--primary)] text-white shadow-md shadow-[var(--primary)]/20"
                     : "border-2 border-[var(--primary)]/15 bg-white text-[var(--primary)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/5"
@@ -274,7 +303,40 @@ export function StepFamily({
               </button>
             );
           })}
+          {/* Outros toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowOtherNeeds(!showOtherNeeds);
+              if (showOtherNeeds) {
+                updateForm({ otherNeeds: "" } as Partial<WizardFormData>);
+              }
+            }}
+            className={cn(
+              "inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-200",
+              showOtherNeeds
+                ? "bg-[var(--primary)] text-white shadow-md shadow-[var(--primary)]/20"
+                : "border-2 border-[var(--primary)]/15 bg-white text-[var(--primary)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/5"
+            )}
+          >
+            <MessageSquare className="size-4" />
+            Outros
+            {showOtherNeeds && <Check className="size-3.5" />}
+          </button>
         </div>
+        {showOtherNeeds && (
+          <textarea
+            placeholder="Descreva outras necessidades especiais..."
+            value={
+              ((formData as Record<string, unknown>).otherNeeds as string) ?? ""
+            }
+            onChange={(e) =>
+              updateForm({ otherNeeds: e.target.value } as Partial<WizardFormData>)
+            }
+            rows={2}
+            className="w-full rounded-xl border-2 border-[var(--primary)]/10 bg-white px-4 py-3 text-sm text-[var(--primary)] placeholder:text-muted-foreground focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/30"
+          />
+        )}
       </div>
 
       {/* Habit Toggles */}
@@ -292,7 +354,7 @@ export function StepFamily({
                 type="button"
                 onClick={() => handleToggle(item.key)}
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-200",
+                  "inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-200",
                   active
                     ? "bg-[var(--primary)] text-white shadow-md shadow-[var(--primary)]/20"
                     : "border-2 border-[var(--primary)]/15 bg-white text-[var(--primary)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/5"
@@ -304,7 +366,40 @@ export function StepFamily({
               </button>
             );
           })}
+          {/* Outros toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowOtherHabits(!showOtherHabits);
+              if (showOtherHabits) {
+                updateForm({ otherHabits: "" } as Partial<WizardFormData>);
+              }
+            }}
+            className={cn(
+              "inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-200",
+              showOtherHabits
+                ? "bg-[var(--primary)] text-white shadow-md shadow-[var(--primary)]/20"
+                : "border-2 border-[var(--primary)]/15 bg-white text-[var(--primary)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/5"
+            )}
+          >
+            <MessageSquare className="size-4" />
+            Outros
+            {showOtherHabits && <Check className="size-3.5" />}
+          </button>
         </div>
+        {showOtherHabits && (
+          <textarea
+            placeholder="Descreva outros habitos ou necessidades de rotina..."
+            value={
+              ((formData as Record<string, unknown>).otherHabits as string) ?? ""
+            }
+            onChange={(e) =>
+              updateForm({ otherHabits: e.target.value } as Partial<WizardFormData>)
+            }
+            rows={2}
+            className="w-full rounded-xl border-2 border-[var(--primary)]/10 bg-white px-4 py-3 text-sm text-[var(--primary)] placeholder:text-muted-foreground focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]/30"
+          />
+        )}
       </div>
 
       {/* Important Space */}

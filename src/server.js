@@ -2,11 +2,72 @@ require("dotenv").config();
 
 const express = require("express");
 const path = require("path");
+const sharp = require("sharp");
 
 const { createGenerationPackage } = require("./planEngine");
 const { renderWithNanoBanana2, extractPlanDataFrom2D } = require("./googleClient");
 const { createLocalBlueprintFallback } = require("./localRenderFallback");
 const { createLocal3DFallback } = require("./local3dFallback");
+
+/**
+ * Crop a room from the 2D floor plan image using bbox_percent coordinates.
+ * Returns a base64 data URL of the cropped region, or null on failure.
+ */
+async function cropRoomFromPlan(planImageDataUrl, bboxPercent) {
+  try {
+    if (!planImageDataUrl || !bboxPercent) return null;
+    const { x, y, w, h } = bboxPercent;
+    if (!w || !h || w <= 0 || h <= 0) return null;
+
+    // Parse base64 data URL
+    const match = planImageDataUrl.match(/^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/);
+    if (!match) return null;
+
+    const mimeType = `image/${match[1]}`;
+    const buffer = Buffer.from(match[2], "base64");
+
+    // Get image dimensions
+    const metadata = await sharp(buffer).metadata();
+    const imgW = metadata.width || 1024;
+    const imgH = metadata.height || 1024;
+
+    // Convert percent to pixels with 5% padding
+    const pad = 5;
+    const left = Math.max(0, Math.round(((x - pad) / 100) * imgW));
+    const top = Math.max(0, Math.round(((y - pad) / 100) * imgH));
+    const width = Math.min(imgW - left, Math.round(((w + pad * 2) / 100) * imgW));
+    const height = Math.min(imgH - top, Math.round(((h + pad * 2) / 100) * imgH));
+
+    if (width < 20 || height < 20) return null;
+
+    const croppedBuffer = await sharp(buffer)
+      .extract({ left, top, width, height })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+
+    const base64 = croppedBuffer.toString("base64");
+    return `data:image/jpeg;base64,${base64}`;
+  } catch (err) {
+    console.warn("[cropRoomFromPlan] Failed to crop:", err.message);
+    return null;
+  }
+}
+
+/**
+ * Find the bbox for a room name in extracted plan data.
+ */
+function findRoomBbox(extractedPlanData, roomName) {
+  const rooms = Array.isArray(extractedPlanData?.rooms) ? extractedPlanData.rooms : [];
+  const normalizedTarget = (roomName || "").toLowerCase().trim();
+
+  for (const room of rooms) {
+    const name = (room.name || room.room_name || "").toLowerCase().trim();
+    if (name === normalizedTarget || name.includes(normalizedTarget) || normalizedTarget.includes(name)) {
+      return room.bbox_percent || null;
+    }
+  }
+  return null;
+}
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -821,30 +882,34 @@ function buildLeanIsometricPrompt({
 
   // Use proven 3D rendering keywords that trigger isometric generation in image models
   return [
-    "Tiny cute isometric house cross-section in a cutaway box, roof removed, showing all rooms inside.",
-    "Soft smooth lighting, soft warm colors, 100mm lens, 3d blender render, physically based rendering.",
-    "Isometric perspective at 30-45 degree angle from above. Miniature architectural diorama style.",
+    "GENERATE A 3D ISOMETRIC MINIATURE ARCHITECTURAL MODEL (maquete).",
+    "Tiny cute isometric house cross-section in a cutaway box, roof completely removed, showing all rooms inside from above at an angle.",
+    "3D Blender render, physically based rendering, soft smooth lighting, warm ambient light, 100mm lens.",
+    "Camera angle: ISOMETRIC at exactly 30-45 degrees from above — like photographing a tiny dollhouse model on a table.",
     "",
     "The house contains these rooms arranged as a single-story floor plan:",
     ...roomDescLines,
     "",
     spatialLayout,
     "",
-    "RENDERING REQUIREMENTS:",
-    "- All walls must be visible with 3D HEIGHT and THICKNESS (like a dollhouse cutaway)",
-    "- All furniture must be miniature 3D objects with realistic volume (tiny beds, sofas, tables, chairs, kitchen counters, toilets, sinks)",
-    "- Floor textures visible (wood planks, ceramic tiles) with 3D perspective",
-    "- Exterior around the house: green grass lawn, small trees, driveway with miniature cars, garden plants",
-    "- Soft directional lighting casting gentle shadows from walls and furniture",
-    "- Clean solid background (light cream or soft blue gradient)",
+    "3D RENDERING REQUIREMENTS:",
+    "- Every wall must have visible 3D HEIGHT (2.8-3m) and THICKNESS — like a real architectural maquete",
+    "- Every piece of furniture must be a cute miniature 3D object with volume: tiny beds, sofas, tables, chairs, kitchen counters, toilets, bathtubs, sinks",
+    "- Floors with visible 3D textures (wood planks, ceramic tiles, marble) rendered in perspective",
+    "- Exterior around the house: green grass lawn, small trees, garden path, driveway with miniature cars",
+    "- Soft directional lighting from upper-left casting gentle shadows from walls and furniture to emphasize 3D depth",
+    "- Clean background: light cream or soft gradient",
     "",
     style ? `Interior design style: ${style}.` : "Interior design style: modern minimalist, neutral tones.",
     "",
-    "STRICT RULES:",
-    "- This is a 3D RENDER, NOT a 2D floor plan. Walls must have height. Furniture must have volume.",
-    "- NO text labels, NO dimension lines, NO annotations, NO watermarks",
-    "- NO flat top-down orthographic view. The camera MUST be at an angle showing wall heights.",
-    "- Think of it as a tiny architectural model (maquete) photographed at an angle.",
+    "ABSOLUTELY FORBIDDEN — REJECTION CRITERIA:",
+    "- NEVER generate a flat 2D floor plan or top-down architectural drawing",
+    "- NEVER use flat 2D furniture icons/symbols — ALL furniture must be 3D miniatures with volume",
+    "- NEVER render walls as flat lines — walls MUST have visible height like a model",
+    "- NEVER use a straight top-down camera angle — the camera MUST be tilted at 30-45 degrees to show depth",
+    "- NO text, NO labels, NO dimensions, NO annotations, NO watermarks anywhere in the image",
+    "",
+    "Think of the output as: a beautiful tiny isometric architectural maquete (scale model) photographed from above at an angle, with the roof removed to see all the rooms inside. Like a miniature diorama.",
     "",
     prompt
   ]
@@ -1115,6 +1180,19 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
       continue;
     }
 
+    // Crop just this room from the 2D plan to use as layout reference.
+    // This prevents the model from copying the full 2D floor plan style.
+    const roomBbox = findRoomBbox(extractedPlanData, room.room);
+    const croppedRoomImage = roomBbox && referencePlanImageDataUrl
+      ? await cropRoomFromPlan(referencePlanImageDataUrl, roomBbox)
+      : null;
+
+    if (croppedRoomImage) {
+      console.log(`[render-3d-package] Cropped room "${room.room}" bbox:`, roomBbox);
+    } else {
+      console.log(`[render-3d-package] No bbox for "${room.room}" — rendering without reference image`);
+    }
+
     const roomRender = await renderPromptWithFallback(
       build3DPromptFromExtraction({
         prompt: room.prompt,
@@ -1127,16 +1205,19 @@ app.post("/api/plan/render-3d-package", async (req, res) => {
       }),
       `Comodo ${room.room}`,
       {
-        referenceImageDataUrl: referencePlanImageDataUrl || undefined,
+        // Send ONLY the cropped room image (not the full 2D plan)
+        referenceImageDataUrl: croppedRoomImage || undefined,
         referenceImageDataUrls: additionalReferenceImageDataUrls,
         generationConfig: buildGenerationConfigByRenderKind("room-interior"),
-        referenceInstruction: [
-          "The attached image is the 2D FLOOR PLAN — use as LAYOUT REFERENCE ONLY.",
-          "Generate a 3D INTERIOR photograph from INSIDE the room, NOT a floor plan view.",
-          "Camera must be at human eye level inside the room. Walls must have height. Furniture must have 3D volume.",
-          "NEVER generate a top-down view, blueprint, or flat floor plan.",
-          ...strict3DRules
-        ].join("\n")
+        promptBeforeImage: true,
+        referenceInstruction: croppedRoomImage
+          ? [
+              "The attached image shows a CROPPED section of the 2D floor plan for this specific room.",
+              "Use it ONLY to understand the room LAYOUT: furniture positions, door/window locations, proportions.",
+              "DO NOT copy the visual style. Generate a PHOTOREALISTIC 3D INTERIOR from INSIDE the room.",
+              "Camera at human eye level (1.5m). Walls with full height. 3D furniture with volume.",
+            ].join("\n")
+          : undefined,
       }
     );
     rooms.push({ room: room.room, ...roomRender });
@@ -1208,24 +1289,44 @@ app.post("/api/plan/render-3d-item", async (req, res) => {
     renderKind
   });
 
-  // For total-exterior (isometric), send 2D plan for layout but use text-only 3D style instructions.
-  // Do NOT send style example images — the model copies them verbatim.
-  let itemReferenceImageDataUrl = referencePlanImageDataUrl || undefined;
+  let itemReferenceImageDataUrl = undefined;
   let itemReferenceImageDataUrls = additionalReferenceImageDataUrls;
-  let itemReferenceInstruction = [
-    "A imagem anexada e a planta 2D oficial do projeto.",
-    "Use essa planta apenas como apoio visual para os dados estruturados extraidos.",
-    ...strict3DRules
-  ].join("\n");
+  let itemReferenceInstruction = undefined;
+  let itemPromptBeforeImage = false;
 
   if (renderKind === "total-exterior") {
-    // Send 2D plan for layout accuracy; prompt goes BEFORE image to establish 3D style first
+    // Isometric: send full 2D plan for layout accuracy, prompt BEFORE image
+    itemReferenceImageDataUrl = referencePlanImageDataUrl || undefined;
     itemReferenceImageDataUrls = [];
+    itemPromptBeforeImage = true;
     itemReferenceInstruction = [
       "The image below is a 2D FLOOR PLAN used ONLY as a LAYOUT GUIDE.",
       "Copy the EXACT room positions, wall placement, sizes, proportions, doors, and windows from it.",
       "DO NOT copy the visual style. DO NOT generate a flat 2D floor plan.",
       "The OUTPUT STYLE is already defined above in the text prompt (3D isometric cutaway)."
+    ].join("\n");
+  } else if (renderKind === "room-interior") {
+    // Room interior: crop just this room from the 2D plan
+    const roomBbox = findRoomBbox(extractedPlanData, label);
+    const croppedImage = roomBbox && referencePlanImageDataUrl
+      ? await cropRoomFromPlan(referencePlanImageDataUrl, roomBbox)
+      : null;
+    itemReferenceImageDataUrl = croppedImage || undefined;
+    itemPromptBeforeImage = true;
+    if (croppedImage) {
+      itemReferenceInstruction = [
+        "The attached image shows a CROPPED section of the 2D floor plan for this specific room.",
+        "Use it ONLY to understand the room LAYOUT: furniture positions, door/window locations, proportions.",
+        "DO NOT copy the visual style. Generate a PHOTOREALISTIC 3D INTERIOR from INSIDE the room.",
+      ].join("\n");
+    }
+  } else {
+    // Facade or other: send full plan
+    itemReferenceImageDataUrl = referencePlanImageDataUrl || undefined;
+    itemReferenceInstruction = [
+      "A imagem anexada e a planta 2D oficial do projeto.",
+      "Use essa planta apenas como apoio visual para os dados estruturados extraidos.",
+      ...strict3DRules
     ].join("\n");
   }
 
@@ -1234,7 +1335,7 @@ app.post("/api/plan/render-3d-item", async (req, res) => {
     referenceImageDataUrls: itemReferenceImageDataUrls,
     generationConfig: buildGenerationConfigByRenderKind(renderKind),
     referenceInstruction: itemReferenceInstruction,
-    promptBeforeImage: renderKind === "total-exterior"
+    promptBeforeImage: itemPromptBeforeImage
   });
 
   if (!renderResult.ok) {
@@ -1280,6 +1381,10 @@ process.on("unhandledRejection", (reason) => {
   console.error("[FATAL] Unhandled Rejection:", reason);
 });
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`Servidor iniciado em http://localhost:${port}`);
 });
+
+// Increase server timeouts for long-running API calls (Gemini extraction can take 2+ minutes)
+server.timeout = 300000; // 5 minutes
+server.keepAliveTimeout = 120000; // 2 minutes

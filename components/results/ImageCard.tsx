@@ -86,11 +86,6 @@ export function ImageCard({
         <h3 className="font-[family-name:var(--font-dm-sans)] text-sm font-semibold text-[var(--primary)]">
           {title}
         </h3>
-        {model && (
-          <Badge variant={usedFallback ? "secondary" : "accent"} className="text-[10px]">
-            {usedFallback ? "SVG" : "IA"}
-          </Badge>
-        )}
       </div>
     </Card>
   );

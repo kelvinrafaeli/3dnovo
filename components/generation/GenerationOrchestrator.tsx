@@ -310,7 +310,7 @@ export function GenerationOrchestrator() {
             <div className="mb-3 flex items-center justify-between">
               <h3 className="flex items-center gap-2 font-semibold text-[var(--primary)]">
                 <Sparkles className="h-4 w-4 text-[var(--accent)]" />
-                Vista 3D Isometrica (sem telhado)
+                Planta 3D
               </h3>
               {(pipeline.stage === "awaiting_selection" || pipeline.stage === "complete") && (
                 <Button
@@ -332,7 +332,7 @@ export function GenerationOrchestrator() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={state.plan3DResults.total.imageDataUrl}
-              alt="Vista 3D Isometrica"
+              alt="Planta 3D"
               className="w-full rounded-lg border border-border/40"
             />
           </CardContent>

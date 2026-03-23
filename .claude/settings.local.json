@@ -13,7 +13,15 @@
       "Bash(node --check src/server.js)",
       "Bash(node --check src/planEngine.js)",
       "Bash(timeout 5 node -e \":*)",
-      "Bash(node --check src/googleClient.js)"
+      "Bash(node --check src/googleClient.js)",
+      "Bash(nslookup portalcarbelle.chedlabs.com 8.8.8.8)",
+      "Bash(nslookup portalconstrulink.chedlabs.com 8.8.8.8)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node -c src/planEngine.js)",
+      "Bash(node -e \"console.log\\(require\\(''./node_modules/next/package.json''\\).version\\)\")",
+      "Bash(node -c src/server.js)",
+      "Bash(node -c src/googleClient.js)"
     ]
   }
 }

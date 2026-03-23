@@ -181,7 +181,7 @@ export function useGenerationPipeline() {
           updatePipeline({
             stage: "rendering_3d_overview",
             progress: 45,
-            stageLabel: "Gerando vista 3D isometrica...",
+            stageLabel: "Gerando vista 3D...",
           });
 
           const allRooms = generationPackage.prompts.plan3DRooms.map((r) => r.room);
@@ -278,46 +278,52 @@ export function useGenerationPipeline() {
           (rp) => selectedRooms.includes(rp.room)
         );
 
-        const pkg3D = await planApi.render3DPackage({
-          prompts: {
-            ...generationPackage.prompts,
-            plan3DTotal: { prompt: "" },     // already rendered — skip
-            facade3D: { prompt: "" },         // skip facade
-            plan3DRooms: filteredRoomPrompts,
-          },
-          plan2DImageDataUrl: plan2DResult.imageDataUrl,
-          extractedPlanData: extraction.extractedPlanData,
-          projectConsistencyLock: lock?.visualSignature ?? null,
-          roomProgram: selectedRooms,
-          maxRooms: selectedRooms.length,
-        });
-
-        // Merge room results with existing total
+        // Render rooms ONE BY ONE for real-time progress updates
         const existingTotal = state.plan3DResults?.total ?? null;
-        const plan3DResults: Plan3DResults = {
-          total: existingTotal,
-          facade: null,
-          rooms: [],
-        };
+        const renderedRooms: { room: string; result: RenderResult }[] = [];
 
-        for (const item of pkg3D.results) {
-          const result: RenderResult = {
-            model: item.result.model,
-            usedFallback: item.result.usedFallback,
-            text: item.result.text,
-            imageDataUrl: item.result.imageDataUrl,
-          };
+        for (let i = 0; i < filteredRoomPrompts.length; i++) {
+          const rp = filteredRoomPrompts[i];
 
-          if (item.type === "total" && item.result) {
-            plan3DResults.total = result;
-          } else if (item.type === "facade" && item.result) {
-            plan3DResults.facade = result;
-          } else if (item.type === "room") {
-            plan3DResults.rooms.push({ room: item.room || item.title, result });
+          updatePipeline({
+            stage: "rendering_3d_rooms",
+            progress: 60 + Math.round((i / filteredRoomPrompts.length) * 35),
+            stageLabel: `Renderizando ${rp.room} (${i + 1}/${filteredRoomPrompts.length})...`,
+          });
+
+          try {
+            const roomResult = await planApi.render3DItem({
+              label: rp.room,
+              prompt: rp.prompt,
+              referencePlanImageDataUrl: plan2DResult.imageDataUrl,
+              extractedPlanData: extraction.extractedPlanData,
+              consistencyLock: lock?.visualSignature,
+              roomProgram: selectedRooms,
+            });
+
+            const result: RenderResult = {
+              model: roomResult.model,
+              usedFallback: roomResult.usedFallback,
+              text: roomResult.text,
+              imageDataUrl: roomResult.imageDataUrl,
+            };
+
+            renderedRooms.push({ room: rp.room, result });
+
+            // Update state after EACH room so the UI shows progress
+            dispatch({
+              type: "SET_PLAN_3D",
+              payload: {
+                total: existingTotal,
+                facade: null,
+                rooms: [...renderedRooms],
+              },
+            });
+          } catch (roomErr) {
+            console.error(`[pipeline] Room "${rp.room}" failed:`, roomErr);
+            // Continue with other rooms even if one fails
           }
         }
-
-        dispatch({ type: "SET_PLAN_3D", payload: plan3DResults });
 
         // --- Complete ---
         updatePipeline({

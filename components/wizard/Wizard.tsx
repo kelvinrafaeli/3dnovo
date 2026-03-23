@@ -11,6 +11,7 @@ import { StepTerrain } from "./StepTerrain";
 import { StepFamily } from "./StepFamily";
 import { StepStyle } from "./StepStyle";
 import { StepRooms } from "./StepRooms";
+import { StepReview } from "./StepReview";
 import type { WizardFormData } from "@/lib/validation";
 import { History, PenLine } from "lucide-react";
 
@@ -22,6 +23,7 @@ const WIZARD_STEPS: WizardStep[] = [
   { number: 3, label: "Familia" },
   { number: 4, label: "Estilo" },
   { number: 5, label: "Comodos" },
+  { number: 6, label: "Resumo" },
 ];
 
 const TOTAL_STEPS = WIZARD_STEPS.length;
@@ -134,6 +136,11 @@ export function Wizard() {
     }
   }, [currentStep]);
 
+  const goToStep = useCallback((step: number) => {
+    setCurrentStep(step);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
   const handleSubmit = useCallback(() => {
     dispatch({ type: "SET_PHASE", payload: "generating" });
     router.push("/generate");
@@ -151,7 +158,16 @@ export function Wizard() {
       case 4:
         return <StepStyle {...shared} onNext={goNext} onBack={goBack} />;
       case 5:
-        return <StepRooms {...shared} onNext={handleSubmit} onBack={goBack} />;
+        return <StepRooms {...shared} onNext={goNext} onBack={goBack} />;
+      case 6:
+        return (
+          <StepReview
+            formData={formData}
+            onSubmit={handleSubmit}
+            onBack={goBack}
+            onGoToStep={goToStep}
+          />
+        );
       default:
         return null;
     }

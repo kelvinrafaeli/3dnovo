@@ -5,11 +5,14 @@ import type { ProjectState } from "@/context/ProjectContext";
 
 /* ---------- helpers ---------- */
 
-const ACCENT = [46, 125, 50]; // brand green
+// App brand colors
+const PRIMARY = [27, 43, 75]; // #1B2B4B navy
+const ACCENT = [232, 168, 56]; // #E8A838 golden
 const DARK = [30, 30, 30];
 const GRAY = [120, 120, 120];
-const LIGHT_BG = [245, 245, 245];
+const LIGHT_BG = [248, 246, 243]; // #F8F6F3 surface
 const WHITE = [255, 255, 255];
+const GREEN = [34, 197, 94];
 
 type RGB = number[];
 
@@ -23,7 +26,6 @@ function drawLine(doc: jsPDF, y: number, margin: number, pageW: number) {
   doc.line(margin, y, pageW - margin, y);
 }
 
-/** Add a base64 data-url image, fitting within maxW x maxH. Returns actual height used. */
 function addImage(
   doc: jsPDF,
   dataUrl: string,
@@ -33,13 +35,11 @@ function addImage(
   maxH: number,
 ): number {
   try {
-    // Extract mime type to determine format
     const match = dataUrl.match(/^data:image\/(png|jpeg|jpg|webp);base64,/);
     const format = match ? (match[1] === "jpg" ? "JPEG" : match[1].toUpperCase()) : "PNG";
     doc.addImage(dataUrl, format, x, y, maxW, maxH);
     return maxH;
   } catch {
-    // If image fails, draw a placeholder
     return drawPlaceholder(doc, x, y, maxW, maxH, "Imagem indisponivel");
   }
 }
@@ -72,6 +72,38 @@ function ensurePageSpace(doc: jsPDF, y: number, needed: number, margin: number):
   return y;
 }
 
+/** Draw a small status indicator circle + label */
+function drawStatusIndicator(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  active: boolean,
+  label: string,
+): number {
+  const radius = 2;
+  if (active) {
+    doc.setFillColor(GREEN[0], GREEN[1], GREEN[2]);
+    doc.circle(x + radius, y - radius + 0.5, radius, "F");
+  } else {
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.5);
+    doc.circle(x + radius, y - radius + 0.5, radius, "S");
+  }
+
+  doc.setFontSize(9);
+  setColor(doc, active ? DARK : GRAY);
+  doc.text(label, x + radius * 2 + 3, y);
+  return doc.getTextWidth(label) + radius * 2 + 6;
+}
+
+function addFooter(doc: jsPDF) {
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  doc.setFontSize(8);
+  setColor(doc, GRAY);
+  doc.text("Construlink — Relatorio de Projeto", pageW / 2, pageH - 10, { align: "center" });
+}
+
 /* ---------- main export ---------- */
 
 export function generateProjectReport(state: ProjectState) {
@@ -82,14 +114,17 @@ export function generateProjectReport(state: ProjectState) {
   const contentW = pageW - margin * 2;
 
   const formData = state.formData as Record<string, unknown>;
-  const summary = state.generationPackage?.summary as Record<string, unknown> | undefined;
   const rooms = state.plan3DResults?.rooms ?? [];
 
   /* ====== PAGE 1 — COVER ====== */
 
-  // Green accent bar at top
-  doc.setFillColor(ACCENT[0], ACCENT[1], ACCENT[2]);
+  // Navy accent bar at top
+  doc.setFillColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
   doc.rect(0, 0, pageW, 40, "F");
+
+  // Golden line accent
+  doc.setFillColor(ACCENT[0], ACCENT[1], ACCENT[2]);
+  doc.rect(0, 38, pageW, 2, "F");
 
   doc.setFontSize(28);
   setColor(doc, WHITE as RGB);
@@ -97,17 +132,18 @@ export function generateProjectReport(state: ProjectState) {
   doc.setFontSize(12);
   doc.text("Relatorio de Projeto Arquitetonico", pageW / 2, 32, { align: "center" });
 
-  let y = 60;
+  let y = 55;
 
   // Project info
-  doc.setFontSize(18);
-  setColor(doc, DARK);
+  doc.setFontSize(16);
+  setColor(doc, PRIMARY);
+  doc.setFont("helvetica", "bold");
   doc.text("Dados do Projeto", margin, y);
   y += 3;
   drawLine(doc, y, margin, pageW);
-  y += 10;
+  y += 8;
 
-  doc.setFontSize(11);
+  doc.setFontSize(10);
   const infoRows: [string, string][] = [
     ["Cliente", String(formData.fullName || "—")],
     ["Documento", String(formData.document || "—")],
@@ -125,10 +161,14 @@ export function generateProjectReport(state: ProjectState) {
         ? `${formData.frontMeters}m x ${formData.rightMeters}m x ${formData.backMeters}m x ${formData.leftMeters}m`
         : "—",
     ],
+    ["Topografia", String(formData.topography || "—")],
+    ["Solo", String(formData.soilType || "—")],
     ["Estilo", String(formData.architecturalStyle || "—")],
+    ["Estrutura", String(formData.structure || "—")],
     ["Pavimentos", String(formData.floors || "—")],
     ["Moradores", String(formData.residentsCount || "—")],
     ["Composicao", String(formData.familyComposition || "—")],
+    ["Espaco Importante", String(formData.importantSpace || "—")],
   ];
 
   for (const [label, value] of infoRows) {
@@ -137,24 +177,111 @@ export function generateProjectReport(state: ProjectState) {
     doc.text(`${label}:`, margin, y);
     setColor(doc, DARK);
     doc.setFont("helvetica", "normal");
-    doc.text(value, margin + 35, y);
-    y += 7;
+    doc.text(value, margin + 38, y);
+    y += 6;
   }
 
-  y += 5;
+  y += 4;
+
+  // Infrastructure indicators
+  doc.setFontSize(10);
+  setColor(doc, PRIMARY);
+  doc.setFont("helvetica", "bold");
+  doc.text("Infraestrutura:", margin, y);
+  y += 6;
+
+  let indX = margin;
+  indX += drawStatusIndicator(doc, indX, y, !!formData.hasWater, "Agua");
+  indX += drawStatusIndicator(doc, indX, y, !!formData.hasSewer, "Esgoto");
+  drawStatusIndicator(doc, indX, y, !!formData.hasElectricity, "Eletricidade");
+  y += 6;
+
+  // Neighbors
+  doc.setFontSize(9);
+  setColor(doc, PRIMARY);
+  doc.setFont("helvetica", "bold");
+  doc.text("Vizinhos:", margin, y);
+  doc.setFont("helvetica", "normal");
+  setColor(doc, DARK);
+  doc.text(
+    `Esq: ${formData.leftNeighbor || "—"} | Dir: ${formData.rightNeighbor || "—"} | Fundos: ${formData.backNeighbor || "—"}`,
+    margin + 22,
+    y,
+  );
+  y += 6;
+
+  // Lifestyle indicators
+  y += 2;
+  doc.setFontSize(10);
+  setColor(doc, PRIMARY);
+  doc.setFont("helvetica", "bold");
+  doc.text("Necessidades & Habitos:", margin, y);
+  y += 6;
+
+  const boolFields: [string, string][] = [
+    ["hasPets", "Pets"],
+    ["hasSpecialNeeds", "Acessibilidade"],
+    ["expandFamily", "Expansao"],
+    ["hasHomeOffice", "Home Office"],
+    ["hasElderly", "Idosos"],
+    ["likesParties", "Festas"],
+    ["cookingImportance", "Cozinha"],
+    ["exercisesAtHome", "Exercicios"],
+    ["worksFromHome", "Trab. Remoto"],
+    ["likesGardening", "Jardinagem"],
+  ];
+
+  let lineX = margin;
+  for (const [key, label] of boolFields) {
+    const w = drawStatusIndicator(doc, lineX, y, !!formData[key], label);
+    lineX += w;
+    if (lineX > pageW - margin - 30) {
+      y += 6;
+      lineX = margin;
+    }
+  }
+  y += 8;
+
+  // Other needs/habits
+  if (formData.otherNeeds) {
+    setColor(doc, ACCENT);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text("Outras necessidades:", margin, y);
+    setColor(doc, DARK);
+    doc.setFont("helvetica", "normal");
+    const lines = doc.splitTextToSize(String(formData.otherNeeds), contentW - 45);
+    doc.text(lines, margin + 45, y);
+    y += lines.length * 5 + 3;
+  }
+
+  if (formData.otherHabits) {
+    setColor(doc, ACCENT);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text("Outros habitos:", margin, y);
+    setColor(doc, DARK);
+    doc.setFont("helvetica", "normal");
+    const lines = doc.splitTextToSize(String(formData.otherHabits), contentW - 45);
+    doc.text(lines, margin + 45, y);
+    y += lines.length * 5 + 3;
+  }
+
+  y += 2;
 
   // Room program
   const selectedRooms = (formData.selectedRooms as string[]) ?? state.selectedRooms ?? [];
   if (selectedRooms.length) {
-    doc.setFontSize(14);
-    setColor(doc, DARK);
+    y = ensurePageSpace(doc, y, 30, margin);
+    doc.setFontSize(12);
+    setColor(doc, PRIMARY);
     doc.setFont("helvetica", "bold");
     doc.text("Programa de Necessidades", margin, y);
     y += 3;
     drawLine(doc, y, margin, pageW);
-    y += 8;
+    y += 7;
 
-    doc.setFontSize(10);
+    doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     setColor(doc, DARK);
     const roomCols = 3;
@@ -162,25 +289,20 @@ export function generateProjectReport(state: ProjectState) {
     selectedRooms.forEach((room, i) => {
       const col = i % roomCols;
       const row = Math.floor(i / roomCols);
-      doc.text(`• ${room}`, margin + col * colW, y + row * 6);
+      doc.text(`• ${room}`, margin + col * colW, y + row * 5);
     });
-    y += Math.ceil(selectedRooms.length / roomCols) * 6 + 5;
+    y += Math.ceil(selectedRooms.length / roomCols) * 5 + 5;
   }
 
-  // Footer on cover
-  doc.setFontSize(8);
-  setColor(doc, GRAY);
-  doc.text("Gerado por Construlink — Powered by AI", pageW / 2, pageH - 10, {
-    align: "center",
-  });
+  addFooter(doc);
 
   /* ====== PAGE 2 — PLANTA 2D ====== */
 
   doc.addPage();
   y = margin;
 
-  doc.setFontSize(18);
-  setColor(doc, DARK);
+  doc.setFontSize(16);
+  setColor(doc, PRIMARY);
   doc.setFont("helvetica", "bold");
   doc.text("Planta 2D Humanizada", margin, y);
   y += 3;
@@ -190,29 +312,21 @@ export function generateProjectReport(state: ProjectState) {
   if (state.plan2DResult?.imageDataUrl) {
     const imgH = Math.min(contentW * 0.75, pageH - y - margin - 20);
     addImage(doc, state.plan2DResult.imageDataUrl, margin, y, contentW, imgH);
-    y += imgH + 5;
-    doc.setFontSize(8);
-    setColor(doc, GRAY);
-    doc.text(`Modelo: ${state.plan2DResult.model || "AI"}`, margin, y);
   } else {
     drawPlaceholder(doc, margin, y, contentW, 120, "Planta 2D Humanizada sera inserida aqui");
-    y += 125;
   }
 
-  // Footer
-  doc.setFontSize(8);
-  setColor(doc, GRAY);
-  doc.text("Construlink — Relatorio de Projeto", pageW / 2, pageH - 10, { align: "center" });
+  addFooter(doc);
 
-  /* ====== PAGE 3 — VISTA 3D ISOMETRICA ====== */
+  /* ====== PAGE 3 — VISTA 3D ====== */
 
   doc.addPage();
   y = margin;
 
-  doc.setFontSize(18);
-  setColor(doc, DARK);
+  doc.setFontSize(16);
+  setColor(doc, PRIMARY);
   doc.setFont("helvetica", "bold");
-  doc.text("Vista 3D Isometrica (sem telhado)", margin, y);
+  doc.text("Planta 3D", margin, y);
   y += 3;
   drawLine(doc, y, margin, pageW);
   y += 8;
@@ -220,25 +334,11 @@ export function generateProjectReport(state: ProjectState) {
   if (state.plan3DResults?.total?.imageDataUrl) {
     const imgH = Math.min(contentW * 0.75, pageH - y - margin - 20);
     addImage(doc, state.plan3DResults.total.imageDataUrl, margin, y, contentW, imgH);
-    y += imgH + 5;
-    doc.setFontSize(8);
-    setColor(doc, GRAY);
-    doc.text(`Modelo: ${state.plan3DResults.total.model || "AI"}`, margin, y);
   } else {
-    drawPlaceholder(
-      doc,
-      margin,
-      y,
-      contentW,
-      120,
-      "Vista 3D Isometrica sera inserida aqui",
-    );
-    y += 125;
+    drawPlaceholder(doc, margin, y, contentW, 120, "Planta 3D sera inserida aqui");
   }
 
-  doc.setFontSize(8);
-  setColor(doc, GRAY);
-  doc.text("Construlink — Relatorio de Projeto", pageW / 2, pageH - 10, { align: "center" });
+  addFooter(doc);
 
   /* ====== PAGES 4+ — COMODOS 3D ====== */
 
@@ -246,20 +346,18 @@ export function generateProjectReport(state: ProjectState) {
     doc.addPage();
     y = margin;
 
-    doc.setFontSize(18);
-    setColor(doc, DARK);
+    doc.setFontSize(16);
+    setColor(doc, PRIMARY);
     doc.setFont("helvetica", "bold");
     doc.text("Renders 3D dos Comodos", margin, y);
     y += 3;
     drawLine(doc, y, margin, pageW);
     y += 8;
 
-    // 2 rooms per page
-    rooms.forEach((room, i) => {
+    rooms.forEach((room) => {
       const neededH = 100;
       y = ensurePageSpace(doc, y, neededH, margin);
 
-      // Room title
       doc.setFontSize(13);
       setColor(doc, ACCENT);
       doc.setFont("helvetica", "bold");
@@ -270,21 +368,13 @@ export function generateProjectReport(state: ProjectState) {
         const imgH = 85;
         addImage(doc, room.result.imageDataUrl, margin, y, contentW, imgH);
         y += imgH + 3;
-        doc.setFontSize(8);
-        setColor(doc, GRAY);
-        doc.setFont("helvetica", "normal");
-        doc.text(`Modelo: ${room.result.model || "AI"}`, margin, y);
       } else {
         drawPlaceholder(doc, margin, y, contentW, 80, `Render de ${room.room} sera inserido aqui`);
         y += 83;
       }
 
       y += 10;
-
-      // Add footer on every page
-      doc.setFontSize(8);
-      setColor(doc, GRAY);
-      doc.text("Construlink — Relatorio de Projeto", pageW / 2, pageH - 10, { align: "center" });
+      addFooter(doc);
     });
   }
 
@@ -293,8 +383,8 @@ export function generateProjectReport(state: ProjectState) {
   doc.addPage();
   y = margin;
 
-  doc.setFontSize(18);
-  setColor(doc, DARK);
+  doc.setFontSize(16);
+  setColor(doc, PRIMARY);
   doc.setFont("helvetica", "bold");
   doc.text("Observacoes", margin, y);
   y += 3;
@@ -320,15 +410,12 @@ export function generateProjectReport(state: ProjectState) {
 
   y += 10;
 
-  // Generated date
   doc.setFontSize(9);
   setColor(doc, GRAY);
   const now = new Date();
   doc.text(`Gerado em: ${now.toLocaleDateString("pt-BR")} as ${now.toLocaleTimeString("pt-BR")}`, margin, y);
 
-  // Footer
-  doc.setFontSize(8);
-  doc.text("Construlink — Relatorio de Projeto", pageW / 2, pageH - 10, { align: "center" });
+  addFooter(doc);
 
   /* ====== DOWNLOAD ====== */
 

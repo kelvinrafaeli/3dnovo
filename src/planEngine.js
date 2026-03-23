@@ -24,7 +24,18 @@ const terrainFormSchema = z.object({
   hasWater: z.coerce.boolean(),
   hasSewer: z.coerce.boolean(),
   hasElectricity: z.coerce.boolean(),
-  architecturalStyle: z.string().trim().optional()
+  architecturalStyle: z.string().trim().optional(),
+  // New family/lifestyle fields
+  hasHomeOffice: z.coerce.boolean().optional(),
+  hasElderly: z.coerce.boolean().optional(),
+  exercisesAtHome: z.coerce.boolean().optional(),
+  worksFromHome: z.coerce.boolean().optional(),
+  likesGardening: z.coerce.boolean().optional(),
+  otherNeeds: z.string().optional(),
+  otherHabits: z.string().optional(),
+  // Room counts
+  bedroomCount: z.coerce.number().optional(),
+  bathroomCount: z.coerce.number().optional(),
 });
 
 function calculateLotMetrics(data) {
@@ -97,10 +108,42 @@ function uniqueRooms(roomList) {
 
 function getStyleDescriptor(style) {
   const descriptors = {
-    japandi: "Estilo Japandi: fusao de minimalismo japones com design escandinavo. Use madeira clara de carvalho, tons neutros (bege, cinza claro, branco), linhas limpas, moveis baixos, iluminacao suave e natural, plantas discretas, texturas organicas como linho e ceramica.",
+    // Modernos
     moderno: "Estilo Moderno: design contemporaneo com linhas retas e geometricas. Use concreto aparente, vidro, aco escovado, tons de cinza com pontos de cor, iluminacao embutida, pe-direito alto, espacos abertos e integrados, moveis de design com formas limpas.",
     minimalista: 'Estilo Minimalista: filosofia "menos e mais". Use paleta monocromatica (branco, off-white, cinza claro), moveis essenciais sem ornamentos, linhas puras, superficies lisas, iluminacao difusa, espacos amplos e livres, armazenamento embutido e oculto.',
-    rustico: "Estilo Rustico: integracao com a natureza. Use madeira robusta escura (peroba, ipe), pedra natural nas paredes, cores terrosas (marrom, verde musgo, terracota), vigas aparentes no teto, lareiras, plantas abundantes, tecidos naturais como algodao cru e juta, iluminacao quente e acolhedora."
+    japandi: "Estilo Japandi: fusao de minimalismo japones com design escandinavo. Use madeira clara de carvalho, tons neutros (bege, cinza claro, branco), linhas limpas, moveis baixos, iluminacao suave e natural, plantas discretas, texturas organicas como linho e ceramica.",
+    cottagecore: "Estilo Cottagecore: estetica romantica rural. Use tecidos florais, cortinas de renda, moveis de madeira pintada, ceramicas artesanais, plantas em vasos de barro, tapetes trancados, iluminacao quente e acolhedora, tons pasteis suaves.",
+    aconchegante: "Estilo Aconchegante: maximo conforto. Use sofas profundos com almofadas, mantas de la, tapetes felpudos, iluminacao quente com abajures, tons terrosos e neutros quentes, madeira natural, velas decorativas, cortinas grossas.",
+    biofilico: "Estilo Biofilico: natureza integrada ao interior. Use muitas plantas verdes, paredes verdes, madeira natural, pedra, bamboo, muita luz natural, tons verdes e terrosos, agua como elemento decorativo.",
+    "estilo-soho": "Estilo Soho/Industrial Loft: loft urbano sofisticado. Use tijolos aparentes, tubulacao metalica exposta, concreto polido, moveis de couro e metal, iluminacao industrial com pendentes Edison, pe-direito alto, arte contemporanea.",
+    luxo: "Estilo Luxo: elegancia premium. Use marmore branco e preto, metais dourados e rose gold, veludo em sofas e cortinas, lustres de cristal, espelhos grandes, tons neutros sofisticados com dourado, iluminacao cenografica.",
+    airbnb: "Estilo Airbnb: design pratico e fotografavel. Use cores claras e neutras, toques decorativos locais, roupa de cama branca premium, cozinha bem equipada, iluminacao natural abundante, plantas decorativas.",
+    madeira: "Estilo Madeira: celebracao da madeira. Use paineis de madeira nas paredes e teto, piso de madeira, moveis de madeira macica, tons quentes naturais, iluminacao quente, detalhes em couro.",
+    personalizado: "Estilo Personalizado: design ecletico e unico. Combine elementos de diferentes estilos de forma harmoniosa, priorize funcionalidade e estetica equilibrada.",
+    // Classicos
+    rustico: "Estilo Rustico: integracao com a natureza. Use madeira robusta escura (peroba, ipe), pedra natural nas paredes, cores terrosas (marrom, verde musgo, terracota), vigas aparentes no teto, lareiras, plantas abundantes, tecidos naturais.",
+    barroco: "Estilo Barroco: opulencia classica. Use molduras ornamentais douradas, lustres de cristal grandes, tecidos de veludo e damasco, moveis entalhados com curvas, espelhos decorados, cores ricas (vinho, azul royal, dourado).",
+    medieval: "Estilo Medieval: ambientes de castelo. Use paredes de pedra bruta, arcos ogivais, ferro forjado em lustres, madeira pesada escura, tapecarias, velas e candelabros, tons escuros.",
+    vintage: "Estilo Vintage: charme retro elegante. Use moveis de epoca restaurados, padroes florais e geometricos classicos, cores pasteis suaves, luminarias retro, porcelana decorativa.",
+    mediterraneo: "Estilo Mediterraneo: brisa costeira. Use paredes caiadas de branco, azulejos pintados a mao (azul e branco), arcos de volta perfeita, terracota no piso, tons de azul e branco.",
+    colonial: "Estilo Colonial Brasileiro: tradicao elegante. Use madeira macica, azulejos portugueses decorativos, varandas com colunas, pisos de ladrilho hidraulico, moveis classicos torneados.",
+    litoraneo: "Estilo Litoraneo/Beach House: casa de praia. Use madeira clara e bambu, cores do mar (azul claro, branco, areia), tecidos leves de linho, moveis de rattan e vime.",
+    // Tematicos
+    tropical: "Estilo Tropical: exuberancia natural. Use folhagens tropicais grandes, cores vibrantes (verde, amarelo, coral), madeira natural, rattan e vime, estampas de folhagem.",
+    bohemio: "Estilo Bohemio/Boho: eclético e livre. Use tapetes orientais coloridos, macrame, almofadas etnicas, plantas penduradas, moveis de madeira e rattan, cores quentes e saturadas.",
+    cyberpunk: "Estilo Cyberpunk: futurismo urbano. Use iluminacao neon (rosa, azul, roxo), superficies escuras e metalicas, LEDs embutidos, moveis com formas angulares, paineis digitais.",
+    gamer: "Estilo Gamer: setup imersivo. Use iluminacao RGB em tiras LED, cadeira gamer ergonomica, mesa ampla com setup multi-monitor, tons escuros com acentos neon, paineis acusticos.",
+    technoland: "Estilo Technoland: ultra-tecnologico. Use superficies brancas brilhantes, linhas de luz LED embutidas, moveis com formas futuristas, automacao domestica visivel.",
+    discoteca: "Estilo Discoteca: festa e glamour. Use bola de espelhos, superficies espelhadas, luzes coloridas, tons de roxo e rosa neon, sofas de veludo em cores vivas.",
+    "arco-iris": "Estilo Arco-Iris: explosao de cores. Use todas as cores do arco-iris de forma harmoniosa, moveis coloridos, paredes com cores vivas, almofadas multicoloridas.",
+    "desenho-animado": "Estilo Desenho Animado: ludico e divertido. Use cores primarias vibrantes, formas organicas e arredondadas, padroes de poa e listras, paredes com murais coloridos.",
+    // Fantasia
+    gotico: "Estilo Gotico: elegancia sombria. Use arcos ogivais, veludo negro e vinho, candelabros com velas, moveis escuros entalhados, vitrais coloridos, paredes escuras.",
+    assustador: "Estilo Assustador/Horror Classico: terror elegante. Use moveis antigos desgastados, cortinas rasgadas, iluminacao fraca e sombria, candelabros com velas derretidas.",
+    "egipcio-antigo": "Estilo Egipcio Antigo: grandiosidade faraonica. Use colunas com capiteis de papiro e lotus, hieroglifos, dourado abundante, pedra calcaria, tons de dourado e turquesa.",
+    "chale-de-esqui": "Estilo Chale de Esqui/Alpine Lodge: aconchego de montanha. Use madeira rustica clara, lareira grande de pedra, peles e mantas de la, tapetes grossos, tons quentes.",
+    chocolate: "Estilo Chocolate: indulgencia marrom. Use tons ricos de chocolate, texturas aveludadas, madeira escura, couro marrom, iluminacao quente dourada, detalhes em cobre e bronze.",
+    "anos-50": "Estilo Anos 50/Retro Americano: nostalgia pop. Use cores pastel vibrantes, moveis com pernas palu, cromados brilhantes, piso xadrez preto e branco, neon, formica colorida."
   };
   return descriptors[(style || "").toLowerCase()] || "";
 }
@@ -138,8 +181,19 @@ function buildContextText(data, lotMetrics) {
     "INFRAESTRUTURA:",
     `- Ponto de agua: ${data.hasWater ? "sim" : "nao"}`,
     `- Ponto de esgoto: ${data.hasSewer ? "sim" : "nao"}`,
-    `- Ponto de eletricidade: ${data.hasElectricity ? "sim" : "nao"}`
-  ].join("\n");
+    `- Ponto de eletricidade: ${data.hasElectricity ? "sim" : "nao"}`,
+    "",
+    "NECESSIDADES ESPECIAIS:",
+    data.hasHomeOffice ? "- Necessita Home Office" : "",
+    data.hasElderly ? "- Idosos na casa (acessibilidade)" : "",
+    data.exercisesAtHome ? "- Pratica exercicios em casa" : "",
+    data.worksFromHome ? "- Trabalha de casa" : "",
+    data.likesGardening ? "- Gosta de jardinagem" : "",
+    data.otherNeeds ? `- Outras necessidades: ${data.otherNeeds}` : "",
+    data.otherHabits ? `- Outros habitos: ${data.otherHabits}` : "",
+    data.bedroomCount != null ? `- Quartos solicitados: ${data.bedroomCount}` : "",
+    data.bathroomCount != null ? `- Banheiros solicitados: ${data.bathroomCount}` : ""
+  ].filter(Boolean).join("\n");
 }
 
 function buildRenderContextText(data, lotMetrics) {
@@ -163,7 +217,13 @@ function buildRenderContextText(data, lotMetrics) {
 function createGenerationPackage(inputData) {
   const data = terrainFormSchema.parse(inputData);
   const lotMetrics = calculateLotMetrics(data);
-  const suggestedRooms = uniqueRooms(suggestRoomsByObjective(data.objective));
+  // Use user-selected rooms if provided, otherwise fall back to suggestions
+  const userRooms = Array.isArray(inputData.selectedRooms) && inputData.selectedRooms.length > 0
+    ? inputData.selectedRooms
+    : [];
+  const suggestedRooms = userRooms.length > 0
+    ? uniqueRooms(userRooms)
+    : uniqueRooms(suggestRoomsByObjective(data.objective));
   const mandatoryRoomsText = suggestedRooms.map((room) => `- ${room}`).join("\n");
   const contextText = buildContextText(data, lotMetrics);
   const renderContextText = buildRenderContextText(data, lotMetrics);
@@ -198,10 +258,22 @@ function createGenerationPackage(inputData) {
   ].join("\n");
 
   const prompt3DTotal = [
-    "Generate a 3D ISOMETRIC CUTAWAY ARCHITECTURAL MODEL (maquete) of this house with ROOF REMOVED.",
-    "Camera at 30-45 degree angle from above. Walls with 2.8-3m height and thickness. 3D furniture with volume.",
-    "Include exterior landscape (grass, trees, driveway). Side lighting with shadows.",
-    "NEVER generate a flat 2D floor plan or top-down view.",
+    "Generate a tiny cute ISOMETRIC 3D architectural model (maquete) of this house.",
+    "Style: 3D Blender render, isometric perspective, 100mm lens, soft smooth lighting, miniature diorama.",
+    "",
+    "CRITICAL REQUIREMENTS:",
+    "- ISOMETRIC 3D perspective at 30-45 degree angle from above — this is the #1 priority.",
+    "- Roof REMOVED to show interior rooms from above in 3D cutaway style.",
+    "- ALL walls must have visible HEIGHT (2.8-3m) and THICKNESS — NOT flat lines.",
+    "- ALL furniture must be 3D miniature models with volume and depth — NOT flat 2D icons.",
+    "- Include exterior landscape (grass, trees, driveway) around the house.",
+    "- Soft side lighting with realistic shadows to emphasize the 3D depth.",
+    "",
+    "ABSOLUTELY FORBIDDEN — if you do any of these, the output is REJECTED:",
+    "- Do NOT generate a flat 2D floor plan viewed from directly above.",
+    "- Do NOT generate a top-down architectural drawing with flat furniture symbols.",
+    "- Do NOT make walls appear as flat lines without height.",
+    "- The output MUST look like a 3D miniature architectural model, NOT a 2D blueprint.",
     "",
     styleText ? `Architectural style: ${styleText}.` : "",
     "Include all rooms listed below:",

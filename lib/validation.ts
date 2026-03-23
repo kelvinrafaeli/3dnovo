@@ -40,9 +40,16 @@ export const stepFamilySchema = z.object({
   hasPets: z.boolean(),
   hasSpecialNeeds: z.boolean(),
   expandFamily: z.boolean(),
+  hasHomeOffice: z.boolean().optional(),
+  hasElderly: z.boolean().optional(),
   likesParties: z.boolean(),
   cookingImportance: z.boolean(),
+  exercisesAtHome: z.boolean().optional(),
+  worksFromHome: z.boolean().optional(),
+  likesGardening: z.boolean().optional(),
   importantSpace: z.string().min(1, "Selecione o espaco mais importante."),
+  otherNeeds: z.string().optional().or(z.literal("")),
+  otherHabits: z.string().optional().or(z.literal("")),
 });
 
 // Step 4: Style
